@@ -308,11 +308,15 @@ namespace RavenIron.RagnaroksWrath.Config
                     new AcceptableValueRange<float>(0f, 10f)));
 
             StormsForceWeather = cfg.Bind(weather, "StormsForceWeather", false,
-                "THE ONLY SETTING IN THIS MOD THAT SELECTS AN ENVIRONMENT. Default off, and it " +
-                "should stay off for anyone running Seasonality or any other weather mod: two " +
-                "mods forcing environment selection is a straight conflict where whoever patches " +
-                "last silently wins. It exists for owners running no weather mod at all, who " +
-                "would otherwise get a storm with a clear sky.");
+                "THE ONLY SETTING IN THIS MOD THAT SELECTS AN ENVIRONMENT. Off by default: a " +
+                "storm is then a banner, gameplay multipliers and lightning under whatever sky " +
+                "the world already has. On, the storm shows StormForcedEnvironment for its " +
+                "duration through vanilla's own event override - the same mechanism boss events " +
+                "use - which the engine consults before the biome weather list. Verified " +
+                "2026-09-03 to coexist with Seasonality, which only rewrites that list; a weather " +
+                "mod that patches the override path itself may still win, silently. Every CLIENT " +
+                "needs the same value, read at game launch: the sky is chosen on the player's " +
+                "machine, and a reconnect does not re-read this file.");
 
             StormForcedEnvironment = cfg.Bind(weather, "StormForcedEnvironment", "ThunderStorm",
                 "Environment name used only when StormsForceWeather is on. Ignored entirely " +

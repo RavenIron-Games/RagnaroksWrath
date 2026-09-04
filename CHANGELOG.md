@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.26.1
+
+- **The `StormsForceWeather` warning was wrong about Seasonality, and is now an
+  information line.** Turning the storm look on used to log a warning that it
+  "conflicts with Seasonality and any other weather mod" and should be off unless you
+  run none. Verified in-game with Seasonality 3.8.0 installed, and by reading both
+  sides: the storm sky goes through vanilla's own event override, which the engine
+  consults *before* the biome weather list, and Seasonality only rewrites that list.
+  The two coexist; the forced sky shows for the storm's duration and Seasonality's
+  returns when it ends. The boot line and the setting's description now say so, and
+  keep one honest caveat: a weather mod that patches the override path itself may
+  still win. Also spelled out where it was missing: the value must match on every
+  client and is read at game launch, so a reconnect after editing it changes nothing.
+- No gameplay or simulation change. Same defaults, same storms.
+
 ## 0.26.0
 
 - **Storms stop crying wolf over homesteads.** A Devastating Storm anchors on a

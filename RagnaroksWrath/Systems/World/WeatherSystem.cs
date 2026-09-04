@@ -78,11 +78,16 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 $"{ModConfig.StormDurationSeconds.Value:F0}s, range {ModConfig.StormRangeMeters.Value:F0}m, " +
                 $"forceWeather={ModConfig.StormsForceWeather.Value}.");
 
+            // Info, not a warning, since 2026-09-03: the sky is set through vanilla's own event
+            // override, which EnvMan consults BEFORE the biome weather list. Seasonality only
+            // rewrites that list (decompiled, then seen by eye), so the two coexist. A weather mod
+            // that patches the override path itself is a different story, hence the last clause.
             if (ModConfig.StormsForceWeather.Value)
-                RagnaroksWrath.Log.LogWarning(
-                    $"[{Name}] StormsForceWeather is ON. This mod will select an EnvMan environment " +
-                    "during storms, which conflicts with Seasonality and any other weather mod. " +
-                    "Turn it off unless you run none.");
+                RagnaroksWrath.Log.LogInfo(
+                    $"[{Name}] StormsForceWeather is ON: storms show the " +
+                    $"'{ModConfig.StormForcedEnvironment.Value}' sky through vanilla's event override, " +
+                    "which outranks the biome weather list. Coexists with Seasonality (verified " +
+                    "2026-09-03); a mod that patches the override path itself may still win.");
         }
 
         public void Tick(float deltaSeconds)
