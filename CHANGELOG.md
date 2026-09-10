@@ -17,6 +17,17 @@
     3x3 sweep exactly, so storms hold and break on precisely the same ground as before.
   - `SpawnSystem.GetNrOfInstances(GameObject)` was removed; the verbose war census now calls
     the ranged overload with the same arguments the deleted one used internally.
+  - **The one that would have taken the whole mod down at boot:** 1.0.7 deleted the
+    `levelUpMultiplier` parameter that Empower's Harmony patch bound to. A prefix declaring a
+    parameter its target no longer has does not fail quietly — Harmony throws while patching.
+    The hook moved to `SpawnSystem.GetLevelUpChance`, which is where 1.0 hoisted that
+    calculation, and it is a better fit: multiplying the returned chance is exactly what the
+    old argument did, only `SpawnSystem.Spawn` calls that overload so fixed spawners are still
+    counted once, and it is now a result-decorating postfix at default priority.
+- **Every compiler-invisible dependency on the game is now verified, not assumed.**
+  `tools\apiprobe` resolves all 50 Harmony patch targets, reflection lookups and
+  private-member accesses across this mod and FireFront against the real 1.0.7 assemblies.
+  Run it after any Valheim update; a clean build proves nothing about any of them.
 - **Requires FireFront 0.20.0 or newer**, and says so at boot if it finds an older one. On
   1.0.7 an older FireFront cannot resolve its own save path, and the symptom of that shows up
   on this side of the bridge as scorch that looks broken.

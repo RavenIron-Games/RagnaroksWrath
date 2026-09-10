@@ -125,26 +125,45 @@ namespace RavenIron.RagnaroksWrath.Patches
     }
 
     /// <summary>
-    /// Corrupted ground breeds meaner things: scale the `levelUpMultiplier` argument of
-    /// vanilla's own spawn roll. Vanilla keeps its loop, its per-critter caps
-    /// (`m_maxLevel`), its centre-distance rule and its `SetLevel` path — the danger map
-    /// follows the drift map without a single mechanism replaced. Passive wildlife is
-    /// excluded: a starred deer is a joke, and their fate is Sickening, not Empowerment.
+    /// Corrupted ground breeds meaner things: scale the level-up CHANCE of vanilla's own
+    /// spawn roll. Vanilla keeps its loop, its per-critter caps (`m_maxLevel`), its
+    /// centre-distance rule and its `SetLevel` path — the danger map follows the drift map
+    /// without a single mechanism replaced. Passive wildlife is excluded: a starred deer is
+    /// a joke, and their fate is Sickening, not Empowerment.
+    ///
+    /// VALHEIM 1.0.7 MOVED THIS SEAM. Until 1.0 the hook was a prefix on `SpawnSystem.Spawn`
+    /// scaling its `ref float levelUpMultiplier` argument; 1.0.7 DELETED that parameter and
+    /// hoisted the calculation into this static instead. A prefix declaring a parameter the
+    /// target no longer has does not fail quietly — Harmony throws while patching — so the
+    /// old shape would have taken the mod down at boot, with a clean compile behind it.
+    ///
+    /// The replacement is the same multiplication one frame earlier, and it is a strict
+    /// improvement in fit:
+    ///   - Vanilla did `chance = GetLevelUpChance(critter); chance *= levelUpMultiplier;`.
+    ///     Multiplying the returned chance IS what the old argument did.
+    ///   - The scope is unchanged. Only `SpawnSystem.Spawn` calls THIS overload; the
+    ///     `(Vector3, float)` one that `CreatureSpawner` uses is a different method and is
+    ///     left alone, so fixed spawners keep coming through Patch_CreatureSpawner_Spawn
+    ///     below and are still counted exactly once.
+    ///   - Position and creature both arrive as arguments, so neither the drift lookup nor
+    ///     the passive exclusion loses any information.
+    /// It is also house rule 1's amended shape — a result-decorating postfix at DEFAULT
+    /// priority, appending to a return value, ceding the final say to anyone who rewrites it.
     /// </summary>
-    [HarmonyPatch(typeof(SpawnSystem), "Spawn")]
-    [HarmonyPriority(Priority.Low)]
-    public static class Patch_SpawnSystem_Spawn
+    [HarmonyPatch(typeof(SpawnSystem), nameof(SpawnSystem.GetLevelUpChance),
+                  new[] { typeof(Vector3), typeof(SpawnSystem.SpawnData) })]
+    public static class Patch_SpawnSystem_GetLevelUpChance
     {
-        private static void Prefix(SpawnSystem.SpawnData critter, Vector3 spawnPoint,
-                                   ref float levelUpMultiplier)
+        private static void Postfix(Vector3 position, SpawnSystem.SpawnData creature,
+                                    ref float __result)
         {
             try
             {
-                if (critter?.m_prefab == null) return;
-                if (ConsequenceMath.IsPassivePrefab(critter.m_prefab.name,
+                if (creature?.m_prefab == null) return;
+                if (ConsequenceMath.IsPassivePrefab(creature.m_prefab.name,
                         ModConfig.WildlifePrefabs.Value)) return;
 
-                levelUpMultiplier *= ConsequenceGate.EmpowerMultiplierAt(spawnPoint);
+                __result *= ConsequenceGate.EmpowerMultiplierAt(position);
             }
             catch (Exception)
             {

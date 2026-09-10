@@ -15,6 +15,9 @@ build UI.
 ```powershell
 .\tools\fetch-libs.ps1     # once per machine: copies game/BepInEx DLLs into libs\
 .\tools\run-tests.ps1      # off-game logic tests (net10) — run before every commit
+# After ANY Valheim update, before shipping: does the game still have what we reach for?
+dotnet build tools\apiprobe\Probe.csproj -v q --nologo
+.\tools\apiprobe\bin\Debug\net10.0\Probe.exe "<Valheim>\valheim_Data\Managed"
 .\place-files.ps1          # sorts loose files in root into their project folders
 python tools\dnread.py libs\assembly_valheim_publicized.dll ZNet EnvMan
                            # BROKEN on Skadi's box: `python` there is the Microsoft Store
