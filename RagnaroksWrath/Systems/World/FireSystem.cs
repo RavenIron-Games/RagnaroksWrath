@@ -63,6 +63,12 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         private static readonly System.Version MinimumFireFrontVersion = new System.Version(0, 17, 2);
         private static readonly System.Version IgniterFireFrontVersion = new System.Version(0, 17, 3);
 
+        // Valheim 1.0.7 broke FireFront below 0.20.0 outright: it calls the deleted
+        // World.GetWorldSavePath, so its fire store cannot resolve a path. Worth its own line
+        // because the symptom lands on OUR side of the bridge — fires that never persist look
+        // like a scorch bug here, not a stale dependency there.
+        private static readonly System.Version GameOneZeroFireFrontVersion = new System.Version(0, 20, 0);
+
         public string Name => "FireSystem";
         public bool Enabled => ModConfig.EnableFire.Value;
         public float IntervalSeconds => ModConfig.FireScorchIntervalSeconds.Value;
@@ -125,6 +131,13 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 RagnaroksWrath.Log.LogInfo(
                     $"[{Name}] FireFront {version} predates {IgniterFireFrontVersion} — arson " +
                     "attribution stays dormant; scorch is unaffected.");
+
+            if (version < GameOneZeroFireFrontVersion)
+                RagnaroksWrath.Log.LogWarning(
+                    $"[{Name}] FireFront {version} predates {GameOneZeroFireFrontVersion}, which is the " +
+                    "first build ported to Valheim 1.0.7. On 1.0.7 it cannot resolve its own save path, " +
+                    "so fires do not survive a restart and anything downstream of them here will look " +
+                    "wrong for the wrong reason. Update FireFront.");
 
             if (ModConfig.StormLightningEnabled.Value)
                 RagnaroksWrath.Log.LogInfo(

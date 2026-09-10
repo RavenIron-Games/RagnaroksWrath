@@ -158,7 +158,15 @@ namespace RavenIron.RagnaroksWrath.Core
                 // Deliberate consequence: for a cloud-saved world the drift store stays on this
                 // machine and does not travel with the save. Writing through the cloud API is a
                 // far larger change, and a store that writes nowhere is worse than a local one.
-                return World.GetWorldSavePath(FileHelpers.FileSource.Local);
+                // Valheim 1.0.7 deleted World.GetWorldSavePath. SaveSystem.GetWorldsSaveRootPath
+                // is the same method under a new home — same body, same "/worlds_local" suffix
+                // for Local — and the world .db still sits directly in it, so our sidecar keeps
+                // landing beside the save exactly as before.
+                //
+                // Note for anyone reading the enum: 1.0.7 renumbered FileSource into a [Flags]
+                // enum, so Local is 2 now, not 1. Passing the SYMBOL is what keeps this correct;
+                // never persist or hardcode its numeric value.
+                return SaveSystem.GetWorldsSaveRootPath(FileHelpers.FileSource.Local);
             }
             catch (Exception ex)
             {

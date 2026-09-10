@@ -92,6 +92,30 @@ namespace RagnaroksWrath.Tests
                 !ZoneKey.TryParse("not-a-key", out _)
                 && !ZoneKey.TryParse("", out _)
                 && !ZoneKey.TryParse(null, out _));
+
+            // ---- Valheim 1.0.7: zone ids became the short-backed Vector2s ----------------
+            // ZoneKey keeps int fields so the on-disk format is untouched, which means every
+            // trip out to the game and back now narrows. These pin that the narrowing is a
+            // no-op across the range a real world can produce.
+
+            Check("a zone key survives a round-trip through Vector2s",
+                new ZoneKey(new ZoneKey(-15, -200).ToVector2s()) == new ZoneKey(-15, -200));
+
+            Check("zero survives the Vector2s round-trip",
+                new ZoneKey(new ZoneKey(0, 0).ToVector2s()) == new ZoneKey(0, 0));
+
+            // A full world is roughly ±160 zones. This is an order of magnitude past the edge
+            // of any real map and still nowhere near a short, so the conversion is lossless
+            // for anything the game can hand us.
+            Check("coords far beyond a real world still round-trip losslessly",
+                new ZoneKey(new ZoneKey(-2000, 2000).ToVector2s()) == new ZoneKey(-2000, 2000));
+
+            // The failure this guards against: if ZoneKey ever stored shorts, or the game
+            // widened Vector2s, a key that parsed one way and converted another would split
+            // a zone's drift history in two without any error.
+            Check("Vector2s and Vector2i views of a key agree",
+                new ZoneKey(-15, -200).ToVector2s().ToVector2i().x == new ZoneKey(-15, -200).ToVector2i().x
+                && new ZoneKey(-15, -200).ToVector2s().ToVector2i().y == new ZoneKey(-15, -200).ToVector2i().y);
         }
 
         // ---- ZoneClock --------------------------------------------------------------

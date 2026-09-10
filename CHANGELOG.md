@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.27.0
+
+- **Valheim 1.0.7 support. This release REQUIRES it, and does not run on 0.2x.** The 1.0
+  release moved several things the mod stands on, and every one of them was a clean compile
+  and a dead mod in-game:
+  - `World.GetWorldSavePath` was deleted. The drift store now resolves through
+    `SaveSystem.GetWorldsSaveRootPath`, which is the same method rehoused — same body, same
+    `/worlds_local`, and the world `.db` still sits in it, so your existing store file is
+    found exactly where it always was. **No save migration, nothing to move.**
+  - Zone ids became the short-backed `Vector2s`. `ZoneKey` keeps its own `int` fields, so the
+    on-disk zone format is byte-for-byte what it was and every zone's drift history carries
+    over untouched. Four new tests pin the conversion as lossless.
+  - `ZDOMan.FindSectorObjects` swapped its radius integers for a `SimulationDistance`. The
+    homestead scan behind `StormAvoidBaseMeters` now passes the value that reproduces the old
+    3x3 sweep exactly, so storms hold and break on precisely the same ground as before.
+  - `SpawnSystem.GetNrOfInstances(GameObject)` was removed; the verbose war census now calls
+    the ranged overload with the same arguments the deleted one used internally.
+- **Requires FireFront 0.20.0 or newer**, and says so at boot if it finds an older one. On
+  1.0.7 an older FireFront cannot resolve its own save path, and the symptom of that shows up
+  on this side of the bridge as scorch that looks broken.
+- No gameplay, balance or config change. Same defaults, same simulation, same numbers.
+
 ## 0.26.1
 
 - **The `StormsForceWeather` warning was wrong about Seasonality, and is now an

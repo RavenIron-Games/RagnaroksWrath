@@ -168,7 +168,10 @@ namespace RavenIron.RagnaroksWrath.Client
                 {
                     GameObject target = _warHorns[i].m_pheromoneTarget;
                     if (target == null) continue;
-                    int loaded = SpawnSystem.GetNrOfInstances(target);
+                    // 1.0.7 removed the one-argument overload. Its whole body was
+                    // GetNrOfInstances(prefab, Vector3.zero, 0f), and maxRange 0 still means
+                    // "no range limit", so this is the same count, not a near-miss.
+                    int loaded = SpawnSystem.GetNrOfInstances(target, Vector3.zero, 0f);
                     int near = SpawnSystem.GetNrOfInstances(target, origin, 200f);
                     census.Append($" {target.name}: {loaded} loaded, {near} within 200m;");
                 }

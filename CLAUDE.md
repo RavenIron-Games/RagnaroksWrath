@@ -222,6 +222,26 @@ overlap if it is ever installed alongside.
 
 ## Known traps
 
+- **A Valheim update does NOT regenerate `valheim_Data\Managed\publicized_assemblies`.**
+  Found 2026-09-10, the day the game shipped **1.0.7** (the 1.0 release, up from 0.2x): the
+  in-game folder still held July files, so `fetch-libs.ps1` — which read exactly that folder —
+  would have rebuilt every mod against the DEAD API. The build is clean; the mod throws
+  `MissingMethodException` in-game. This is rule 5's failure mode wearing a different hat.
+  The owner publicizes into `%USERPROFILE%\Desktop\ValheimModding\publicized_assemblies`;
+  `fetch-libs.ps1` now searches several locations, takes the newest, and REFUSES when the
+  publicized set predates `assembly_valheim.dll`. It also finds BepInEx in the Gale profiles,
+  because the Steam install is vanilla — the script could not previously run on this machine
+  at all. Four repos hold byte-identical copies (RW, Cairn, Undertow, RavenEye); keep them so.
+- **1.0.7 renumbered `FileHelpers.FileSource` into a `[Flags]` enum: `Local` went from 1 to 2.**
+  The quietest change in the whole update. Code that passes the SYMBOL is unaffected; anything
+  that ever stored, serialised or hardcoded the number now means something else. Nothing here
+  does, and it must stay that way. Same shape of hazard as any renumbered enum: no error, no
+  log line, just wrong data. The other 1.0.7 moves are loud by comparison and are recorded in
+  the changelog: `World.GetWorldSavePath` → `SaveSystem.GetWorldsSaveRootPath`, zone ids
+  `Vector2i` → the short-backed `Vector2s` (which lives in **assembly_utils**, not
+  assembly_valheim), `ZDOMan.FindSectorObjects`'s `(area, distantArea)` ints → a
+  `SimulationDistance` struct where `classic: true` is what reproduces the old square sweep,
+  and `SpawnSystem.GetNrOfInstances(GameObject)` deleted in favour of the ranged overload.
 - **Setting a ZDO's position does not move an object.** It is a suggestion the owning machine
   overwrites next frame — and with a `Rigidbody`, continuously, all the way out of the world.
   `ZSyncTransform` makes the fall *persistent*. `ZoneSystem.GetGroundHeight` returns its own
@@ -254,7 +274,15 @@ overlap if it is ever installed alongside.
 - **Driving a vanilla piece: copy the caller's ORDER, not just its arguments.** `Smelter`
   checks `IsItemAllowed` *before* `RemoveItem` because the RPC re-validates on arrival and
   silently drops what it rejects. Put every irreversible step after every check.
-- `ZRoutedRpc.Register` tops out at **6** type parameters, `ZNetView.Register` at **4**.
+- `ZRoutedRpc.Register` tops out at **6** type parameters. `ZNetView.Register` was **4** and
+  is **6** as of 1.0.7 — verified in both assemblies on 2026-09-10. A widening breaks nothing,
+  but the old number turns away a design that is now legal.
+- **`ZoneSystem`'s singleton backing field was renamed `m_instance` → `s_instance` in 1.0.7.**
+  The public `instance` property is unchanged, so this is invisible unless something reflects
+  the field BY NAME — FireFront did, and the only symptom was its water check silently
+  no-opping so ground fire could cross rivers. `ZNetScene` and `EnvMan` were always `s_`;
+  `GameCamera` is still `m_`. There is no rule to infer here, which is the point: reflect the
+  public property where one exists, and try both spellings when it does not.
 
 ---
 

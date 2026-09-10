@@ -28,7 +28,23 @@ namespace RavenIron.RagnaroksWrath.Core
             Y = v.y;
         }
 
+        /// <summary>
+        /// Valheim 1.0.7 moved zone ids from Vector2i to the short-backed Vector2s.
+        ///
+        /// X and Y stay INT on purpose: they are what ToString/TryParse round-trip, so the
+        /// on-disk format is untouched by the game's change. The narrowing is safe in both
+        /// directions — a full world spans roughly ±160 zones and a short holds ±32767.
+        /// </summary>
+        public ZoneKey(Vector2s v)
+        {
+            X = v.x;
+            Y = v.y;
+        }
+
         public Vector2i ToVector2i() => new Vector2i(X, Y);
+
+        /// <summary>The 1.0.7 zone-id type. See the Vector2s constructor for why this is safe.</summary>
+        public Vector2s ToVector2s() => new Vector2s(X, Y);
 
         /// <summary>Zone containing a world position.</summary>
         public static ZoneKey FromWorldPos(Vector3 pos) => new ZoneKey(ZoneSystem.GetZone(pos));
@@ -38,7 +54,7 @@ namespace RavenIron.RagnaroksWrath.Core
         /// use WorldGenerator.instance.GetHeight() for terrain, which works on unloaded zones
         /// and does not force generation.
         /// </summary>
-        public Vector3 ToWorldPos() => ZoneSystem.GetZonePos(ToVector2i());
+        public Vector3 ToWorldPos() => ZoneSystem.GetZonePos(ToVector2s());
 
         public bool Equals(ZoneKey other) => X == other.X && Y == other.Y;
 

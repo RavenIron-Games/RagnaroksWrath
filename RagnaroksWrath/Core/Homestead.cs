@@ -34,7 +34,14 @@ namespace RavenIron.RagnaroksWrath.Core
                 if (man == null) return resultWhenUncheckable;
 
                 scratch.Clear();
-                man.FindSectorObjects(ZoneKey.FromWorldPos(pos).ToVector2i(), 1, 0, scratch);
+                // Valheim 1.0.7 replaced the (sector, area, distantArea) integers with a
+                // SimulationDistance. `classic: true` is load-bearing, not decoration: without
+                // it the near ring is filtered by ZonesWithinRadius (a circle, not our square)
+                // AND the distant loop runs from 1 instead of near+1, sweeping the same ring a
+                // second time. With it, (near 1, far 0) is exactly the old (area 1, distant 0):
+                // one full 3x3 block of sectors, nothing beyond.
+                man.FindSectorObjects(ZoneKey.FromWorldPos(pos).ToVector2s(),
+                                      new SimulationDistance(1, 0, classic: true), scratch);
 
                 float sqr = radius * radius;
                 for (int i = 0; i < scratch.Count; i++)

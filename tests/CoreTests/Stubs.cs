@@ -31,16 +31,30 @@ public struct Vector2i
     public override string ToString() => $"({x},{y})";
 }
 
+// Valheim 1.0.7's zone id, and it lives in assembly_utils rather than assembly_valheim.
+// SHORT-backed on purpose here, exactly as the game has it: a stub that widened these to int
+// would hide a narrowing bug in ZoneKey instead of catching one.
+public struct Vector2s
+{
+    public short x, y;
+    public Vector2s(short x, short y) { this.x = x; this.y = y; }
+    public Vector2s(int x, int y) { this.x = (short)x; this.y = (short)y; }
+    public Vector2s(Vector2i v) { x = (short)v.x; y = (short)v.y; }
+    public Vector2i ToVector2i() => new Vector2i(x, y);
+    public override string ToString() => $"{x},{y}";
+}
+
 public static class ZoneSystem
 {
     public const float ZoneSize = 64f;
 
-    public static Vector2i GetZone(Vector3 point)
-        => new Vector2i(
+    // 1.0.7 returns Vector2s here and takes Vector2s below. Both changed together.
+    public static Vector2s GetZone(Vector3 point)
+        => new Vector2s(
             (int)Math.Floor((point.x + ZoneSize / 2f) / ZoneSize),
             (int)Math.Floor((point.z + ZoneSize / 2f) / ZoneSize));
 
-    public static Vector3 GetZonePos(Vector2i id)
+    public static Vector3 GetZonePos(Vector2s id)
         => new Vector3(id.x * ZoneSize, 0f, id.y * ZoneSize);
 }
 
@@ -48,7 +62,11 @@ public static class ZoneSystem
 // RELATIVE cloud path, which is not a filesystem location.
 public static class FileHelpers
 {
-    public enum FileSource { Auto = 0, Local = 1, Cloud = 2, Legacy = 3 }
+    // 1.0.7 made this a [Flags] enum and RENUMBERED it: Local moved from 1 to 2. The numbers
+    // are mirrored faithfully because that is the trap — code that passes the symbol is fine,
+    // code that ever stored the number is not.
+    [Flags]
+    public enum FileSource { Auto = 1, Local = 2, Cloud = 4, Legacy = 8 }
 }
 
 public class World
@@ -57,7 +75,14 @@ public class World
     public long m_uid;
 
     // Tests always set Persistence.OverrideDirectory, so this is never the path taken.
-    public static string GetWorldSavePath(FileHelpers.FileSource fileSource) => System.IO.Path.GetTempPath();
+}
+
+// 1.0.7 deleted World.GetWorldSavePath and rehoused it here, same body and same
+// "/worlds_local" suffix for Local. Tests always set Persistence.OverrideDirectory, so this
+// is never the path taken; it exists so the shipping source compiles.
+public static class SaveSystem
+{
+    public static string GetWorldsSaveRootPath(FileHelpers.FileSource fileSource) => System.IO.Path.GetTempPath();
 }
 
 // ZNet is an instance type in the game with a static `instance`. Persistence uses the static
