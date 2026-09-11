@@ -16,6 +16,7 @@ build UI.
 .\tools\fetch-libs.ps1     # once per machine: copies game/BepInEx DLLs into libs\
 .\tools\run-tests.ps1      # off-game logic tests (net10) — run before every commit
 # After ANY Valheim update, before shipping: does the game still have what we reach for?
+# Covers ALL SIX mods since 2026-09-11 (93 surfaces), not just this one and FireFront.
 dotnet build tools\apiprobe\Probe.csproj -v q --nologo
 .\tools\apiprobe\bin\Debug\net10.0\Probe.exe "<Valheim>\valheim_Data\Managed"
 .\place-files.ps1          # sorts loose files in root into their project folders
@@ -225,6 +226,16 @@ overlap if it is ever installed alongside.
 
 ## Known traps
 
+- **Valheim 1.0.12 (2026-09-11) bumped the NETWORK VERSION, 39 → 40.** Two days after 1.0.7, and the
+  only thing in it that matters to anyone here. `ZNet.RPC_PeerInfo` refuses outright any peer whose
+  number differs, so a 1.0.12 client cannot join a 1.0.7 server or the reverse — everyone updates
+  together or nobody plays together. Nothing a mod does can bridge it. The two SAVE formats did NOT
+  move (`Version.Player` 46, `Version.World` 41), so no world and no character needed migrating.
+  **No mod needed a code change**: all six build clean, all 93 probe surfaces resolve, and a full
+  decompile diff of the two builds (81 hunks in 170k lines) touched nothing any mod depends on except
+  three benign bodies — `Terminal.InitTerminal` gained a vanilla command and dropped a cheat gate,
+  `TerrainComp.PaintCleared` gained a null guard, and `ZNet.ListContainsId` had a real bug FIXED
+  (`flag =` → `flag |=`), so an admin list that 1.0.7 broke works again untouched.
 - **A Valheim update does NOT regenerate `valheim_Data\Managed\publicized_assemblies`.**
   Found 2026-09-10, the day the game shipped **1.0.7** (the 1.0 release, up from 0.2x): the
   in-game folder still held July files, so `fetch-libs.ps1` — which read exactly that folder —
@@ -235,6 +246,12 @@ overlap if it is ever installed alongside.
   publicized set predates `assembly_valheim.dll`. It also finds BepInEx in the Gale profiles,
   because the Steam install is vanilla — the script could not previously run on this machine
   at all. Four repos hold byte-identical copies (RW, Cairn, Undertow, RavenEye); keep them so.
+  **Amended 2026-09-11 (1.0.12): sometimes the in-game folder IS current.** That day both it and
+  the Desktop folder held the same freshly publicized build, byte for byte, and fetch-libs picked
+  the in-game one purely because its timestamp was a minute newer. So the rule is not "the in-game
+  copy is stale" — it is that you cannot tell by looking, and the timestamp guard is what decides.
+  Never hand-pick a source; run the script. FireFront and ValkyriesCargo still have no fetch-libs
+  and must be refreshed by hand, which is the remaining hole.
 - **1.0.7 renumbered `FileHelpers.FileSource` into a `[Flags]` enum: `Local` went from 1 to 2.**
   The quietest change in the whole update. Code that passes the SYMBOL is unaffected; anything
   that ever stored, serialised or hardcoded the number now means something else. Nothing here

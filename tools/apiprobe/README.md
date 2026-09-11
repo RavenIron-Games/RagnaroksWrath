@@ -39,11 +39,31 @@ A Harmony patch target is the loud exception: if it goes missing, Harmony throws
 patching and can take the whole mod down at boot. 1.0.7 deleted the `levelUpMultiplier`
 parameter that Ragnarok's Wrath's Empower patch bound to, which would have done exactly that.
 
+## What happened the second time
+
+Valheim 1.0.12 landed on 2026-09-11, two days after 1.0.7. This tool answered the whole
+question in one run — **93 resolved, 0 failed** — and a full decompile diff of the two builds
+agreed: nothing any mod depends on had moved. No mod needed a code change. The one thing that
+did move was the network version, 39 → 40, which breaks client-to-server matching in the game
+itself and is nothing a mod can reach.
+
+Worth knowing: two of the failures on that run were bugs in THIS FILE, not in the game —
+`Raven.m_tempTexts` is `public static` and had been listed as an instance field, and
+`PlatformUserID` lives in `Splatform.dll`, which the probe was not loading. Both printed as
+"would silently no-op in-game". A false alarm here costs minutes; the "exists:" line under each
+failure, which prints the overloads that ARE present, is what turns one into a fix.
+
 ## Maintaining it
 
-The list in `Program.cs` is hand-kept and covers Ragnarok's Wrath and FireFront. When you add
-a reflection lookup or a Harmony patch, add a line here. An entry that is merely *missing*
-from this file is the one that will bite, so the list earning its keep depends on that habit.
+The list in `Program.cs` is hand-kept and covers **all six mods** — Ragnarok's Wrath, FireFront,
+Cairn, Undertow, RavenEye and Valkyrie's Cargo — since 2026-09-11. Before that it covered only
+the first two, and that gap is precisely why the 1.0.7 port needed a 32-agent sweep to find what
+a tool should have found in seconds.
+
+When you add a reflection lookup or a Harmony patch, add a line here. An entry that is merely
+*missing* from this file is the one that will bite, so the list earning its keep depends on that
+habit. Surfaces reached through a runtime `GetType()` rather than a `typeof()` cannot be listed
+here at all — Cairn's piece and item walks are like that — so those stay the tool's blind spot.
 
 `MetadataLoadContext` inspects the assemblies without executing them, so no Unity runtime is
 needed and this runs anywhere the game files exist — including a build agent.

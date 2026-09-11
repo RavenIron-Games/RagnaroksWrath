@@ -37,11 +37,15 @@ class Probe
                 byName[Path.GetFileNameWithoutExtension(f)] = f;
 
         _mlc = new MetadataLoadContext(new PathAssemblyResolver(byName.Values.ToList()), "mscorlib");
-        _asms = new[]
+        // Splatform is the third one that matters: PlatformUserID and the platform ids the admin
+        // lists are matched against live there, not in assembly_valheim.
+        var loaded = new List<Assembly>();
+        foreach (var name in new[] { "assembly_valheim.dll", "assembly_utils.dll", "Splatform.dll" })
         {
-            _mlc.LoadFromAssemblyPath(Path.Combine(managed, "assembly_valheim.dll")),
-            _mlc.LoadFromAssemblyPath(Path.Combine(managed, "assembly_utils.dll")),
-        };
+            string path = Path.Combine(managed, name);
+            if (File.Exists(path)) loaded.Add(_mlc.LoadFromAssemblyPath(path));
+        }
+        _asms = loaded.ToArray();
 
         Console.WriteLine("Valheim assemblies: " + managed);
         Console.WriteLine();
@@ -79,6 +83,62 @@ class Probe
         M("ZDOMan", "FindSectorObjects", AnyInstance, "Vector2s", "SimulationDistance", "List<ZDO>", "List<ZDO>");
         M("EnvMan", "GetCurrentDay", AnyInstance);   // rule 5: private, reached by AccessTools
         F("ZDOVars", "s_creator", AnyStatic);
+
+        // The four mods below were outside this probe until 2026-09-11. That gap was the whole
+        // reason the 1.0.7 port needed a 32-agent sweep to find what a tool should have found.
+        Console.WriteLine();
+        Console.WriteLine("=== Cairn surfaces ===");
+        F("Terminal", "commands", AnyStatic);              // protected static; the console registry
+        F("Raven", "m_instance", AnyStatic);
+        F("Raven", "m_isMunin", AnyInstance);
+        F("Raven", "m_staticTexts", AnyStatic);
+        F("Raven", "m_tempTexts", AnyStatic);              // public STATIC, like m_staticTexts
+        F("ZNetScene", "m_prefabs", AnyInstance);
+        F("ItemDrop", "m_itemData", AnyInstance);
+        F("ItemDrop+ItemData", "m_shared", AnyInstance);
+        F("Piece", "m_resources", AnyInstance);
+        F("Piece+Requirement", "m_amount", AnyInstance);
+        F("Piece+Requirement", "m_resItem", AnyInstance);
+        F("ItemDrop+ItemData+SharedData", "m_buildPieces", AnyInstance);
+        F("PieceTable", "m_pieces", AnyInstance);
+
+        Console.WriteLine();
+        Console.WriteLine("=== Undertow surfaces ===");
+        F("Terminal", "commands", AnyStatic);
+        Any("Character", "UpdateSwimming");
+        Any("Ship", "CustomFixedUpdate");
+
+        Console.WriteLine();
+        Console.WriteLine("=== RavenEye surfaces ===");
+        // Shared by RavenEye's AdminGate, FireFront's PeerIsAdmin and Valkyrie's Cargo.
+        // 1.0.12 changed its BODY, not its shape: `flag = list.Contains(filtered)` became
+        // `flag |= ...`, so a match on the UNFILTERED id is no longer thrown away. That is a
+        // vanilla bug fix, and it makes admin matching slightly more forgiving, never less.
+        M("ZNet", "ListContainsId", AnyInstance | AnyStatic, "SyncedList", "System.String");
+        Any("Game", "UpdateNoMap");
+        Any("ZNet", "GetOtherPublicPlayers");
+        Any("Minimap", "Explore");
+
+        Console.WriteLine();
+        Console.WriteLine("=== Valkyrie's Cargo surfaces ===");
+        F("ZNet", "m_adminList", AnyInstance);
+        F("ZNet", "m_connectionStatus", AnyStatic);
+        F("ZNetPeer", "m_socket", AnyInstance);
+        F("ZRoutedRpc", "m_peers", AnyInstance);
+        F("ZRpc", "m_socket", AnyInstance);
+        F("ZRpc", "m_functions", AnyInstance);
+        F("ZPlayFabSocket", "m_remotePlayerId", AnyInstance);
+        M("ZNet", "GetPeer", AnyInstance, "ZRpc");
+        foreach (var t in new[]
+        {
+            ("BaseAI","IsEnemy"), ("Character","RPC_Damage"), ("Character","ApplyDamage"),
+            ("Character","GetHoverText"), ("Character","InIntro"), ("Chat","HasFocus"),
+            ("FejdStartup","ShowConnectError"), ("GameCamera","UpdateMouseCapture"),
+            ("Humanoid","Awake"), ("ZNet","Awake"), ("ZNet","OnNewConnection"),
+            ("ZNet","RPC_PeerInfo"), ("ZNet","Shutdown"), ("ZNet","Disconnect"),
+            ("ZRpc","HandlePackage"),
+        })
+            Any(t.Item1, t.Item2);
 
         Console.WriteLine();
         Console.WriteLine("=== Harmony patch targets (a missing one throws at patch time) ===");
