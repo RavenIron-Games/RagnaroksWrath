@@ -19,6 +19,12 @@ build UI.
 # Covers ALL SIX mods since 2026-09-11 (93 surfaces), not just this one and FireFront.
 dotnet build tools\apiprobe\Probe.csproj -v q --nologo
 .\tools\apiprobe\bin\Debug\net10.0\Probe.exe "<Valheim>\valheim_Data\Managed"
+# And the other half of that question, which apiprobe CANNOT answer: does the binary we ALREADY
+# SHIPPED still bind? Run it over dist\ and over what the store is serving. A mod that needed no
+# source change is the one nobody re-checks, and that is exactly how Undertow 0.5.1 and RavenEye
+# 0.1.0 stayed broken on Hexium for two days after 1.0.7.
+dotnet build tools\revprobe\RevProbe.csproj -v q --nologo
+.\tools\revprobe\bin\Debug\net10.0\RevProbe.exe "<Valheim>\valheim_Data\Managed" <dll-or-folder>
 .\place-files.ps1          # sorts loose files in root into their project folders
 python tools\dnread.py libs\assembly_valheim_publicized.dll ZNet EnvMan
                            # BROKEN on Skadi's box: `python` there is the Microsoft Store
@@ -246,12 +252,18 @@ overlap if it is ever installed alongside.
   publicized set predates `assembly_valheim.dll`. It also finds BepInEx in the Gale profiles,
   because the Steam install is vanilla — the script could not previously run on this machine
   at all. Four repos hold byte-identical copies (RW, Cairn, Undertow, RavenEye); keep them so.
-  **Amended 2026-09-11 (1.0.12): sometimes the in-game folder IS current.** That day both it and
-  the Desktop folder held the same freshly publicized build, byte for byte, and fetch-libs picked
-  the in-game one purely because its timestamp was a minute newer. So the rule is not "the in-game
-  copy is stale" — it is that you cannot tell by looking, and the timestamp guard is what decides.
-  Never hand-pick a source; run the script. FireFront and ValkyriesCargo still have no fetch-libs
-  and must be refreshed by hand, which is the remaining hole.
+  **Amended 2026-09-11 (1.0.12): the two folders are not stale or current as a UNIT, and choosing
+  between them as one was a bug in this script.** That day the in-game folder's
+  `assembly_valheim_publicized.dll` was one minute newer than the Desktop copy, so the in-game
+  folder won outright — and dragged along its `assembly_utils_publicized.dll`, still from July and
+  two months older than the game's own `assembly_utils.dll`. Five of the six publicized files in
+  every repo were the wrong ones. Nothing broke only because `Vector2s` happens to exist in both
+  copies; had 1.0.7 put it anywhere else, six repos would have built clean against a dead API.
+  `fetch-libs.ps1` now resolves each FILE independently, newest copy across all candidates, and
+  applies the staleness guard per file against its own game assembly — so it will say
+  `assembly_utils_publicized.dll ... newest copy found in <folder>` and refuse just that one.
+  All six repos now carry the script (FireFront and ValkyriesCargo got it the same day, which
+  closes the hand-refresh hole) and the copies are byte-identical; keep them so.
 - **1.0.7 renumbered `FileHelpers.FileSource` into a `[Flags]` enum: `Local` went from 1 to 2.**
   The quietest change in the whole update. Code that passes the SYMBOL is unaffected; anything
   that ever stored, serialised or hardcoded the number now means something else. Nothing here
