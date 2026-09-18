@@ -46,9 +46,20 @@ namespace RavenIron.RagnaroksWrath.Config
         /// <summary>The last migration's boot line, kept for `wrath status`. Empty when nothing has run.</summary>
         public static string LastSummary { get; private set; } = "";
 
+        /// <summary>
+        /// How many steps <see cref="Apply"/> REFUSED this boot. A refusal is a bug in our own
+        /// ledger rather than in the owner's file: a row naming a key this build does not bind.
+        /// Counted because <see cref="LastSummary"/> is written in <see cref="Begin"/> from the
+        /// plan's INTENT, before a single step has run, and `wrath status` reads it back verbatim.
+        /// Without this it claims a value was moved that was never found, and the only
+        /// contradiction is a warning several hundred log lines earlier.
+        /// </summary>
+        private static int _refused;
+
         /// <summary>Call BEFORE the first cfg.Bind. Never throws.</summary>
         public static void Begin(ConfigFile cfg)
         {
+            _refused = 0;
             _snapshot = null;
             _plan = null;
             _path = null;
@@ -131,6 +142,13 @@ namespace RavenIron.RagnaroksWrath.Config
                         versionEntry.Value = ConfigLedger.CurrentVersion;
                 }
 
+                // LastSummary was written in Begin, from the plan's INTENT, before anything ran.
+                // `wrath status` reads it back verbatim, so a refused step has to reach it or the
+                // one line the owner actually looks at is confidently wrong.
+                if (_refused > 0)
+                    LastSummary += " - but " + _refused.ToString(CultureInfo.InvariantCulture) +
+                                   " step(s) were REFUSED; see the warnings in the log";
+
                 if (cfg != null) cfg.Save();
             }
             catch (Exception ex)
@@ -182,6 +200,7 @@ namespace RavenIron.RagnaroksWrath.Config
         /// </summary>
         private static void WarnUnknownSlot(string slot)
         {
+            _refused++;
             RagnaroksWrath.Log.LogWarning(
                 "Config migration wanted to touch " + slot + " but this build binds no such key. " +
                 "Nothing was changed for it. This is a bug in ConfigLedger, not in your file.");

@@ -743,6 +743,28 @@ namespace RagnaroksWrath.Tests
                 Check("and reports NO migration summary, because it short-circuited before planning one",
                     ConfigMigration.LastSummary == "");
 
+                // ---- A REFUSED STEP MUST REACH THE LINE `wrath status` PRINTS. LastSummary is
+                //      written in Begin from the plan's INTENT, before a single step has run, and
+                //      Apply can then refuse one: a ledger row naming a key this build no longer
+                //      binds warns and moves on. Without a correction the status line claims a
+                //      value was moved that was never found, and the only contradiction is a
+                //      warning hundreds of log lines earlier. RW's tables hold no such row today,
+                //      so the plan is hand-built; that is the point, because the row that
+                //      introduces one will be a release, on somebody else's config file.
+                var refusing = new ConfigFile { ConfigFilePath = Path.Combine(dir, "does_not_exist.cfg") };
+                ConfigMigration.Begin(refusing);
+                var refusedPlan = new ConfigLedger.MigrationPlan();
+                refusedPlan.ResetToDefault.Add(ConfigLedger.Slot("Nowhere", "NoSuchKey"));
+                ConfigMigration.Apply(refusing, refusedPlan);
+                ConfigMigration.Finish(refusing, refusing.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0));
+                Check("a refused step corrects the summary `wrath status` prints, rather than leaving it claiming the step happened",
+                    ConfigMigration.LastSummary.IndexOf("REFUSED", StringComparison.Ordinal) >= 0);
+
+                ConfigMigration.Begin(refusing);
+                ConfigMigration.Finish(refusing, refusing.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0));
+                Check("and the count is per boot, so a clean migration after a refused one does not inherit its complaint",
+                    ConfigMigration.LastSummary.IndexOf("REFUSED", StringComparison.Ordinal) < 0);
+
                 // A FRESH INSTALL must get the shipped default instead, or the feature ships dead.
                 var fresh = new ConfigFile { ConfigFilePath = Path.Combine(dir, "does_not_exist.cfg") };
                 ModConfig.Bind(fresh);

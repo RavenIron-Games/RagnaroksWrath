@@ -267,6 +267,20 @@ overlap if it is ever installed alongside.
   throwaway default then `Remove`, both public. Never name the property — house rule 5's Mono JIT
   failure applies. (No retire rung exists here yet; FireFront and Undertow both carry the code.)
 
+- **A migration's summary is written BEFORE any step runs, so a refusal has to be folded back in.**
+  `LastSummary` comes from `ConfigLedger.Describe(_plan)` inside `Begin`, and `wrath status` prints
+  it verbatim. `Apply` can then refuse a step — a ledger row naming a key this build no longer binds
+  warns and moves on — so the one line an owner actually reads claimed a value had moved that was
+  never found, with the only contradiction a warning hundreds of log lines earlier. `_refused` counts
+  them and `Finish` appends to the summary. Found by an adversarial audit of FireFront's port of this
+  same code, 2026-09-18; all three mods had it.
+
+- **RW deliberately has no retirement machinery, and that is not an oversight to correct.** FireFront
+  and Undertow gained a gate on 2026-09-18 that withholds the version stamp when a retirement's drop
+  throws, because a stamped file never migrates again and a transient file lock must not become
+  permanent. There is nothing here that can fail that way, so the gate was NOT ported. Dead machinery
+  reads as a feature that works. Add it in the same commit as the first retire rung, not before.
+
 - **BepInEx orders config sections by NAME when it writes the file**, so the `Meta` section lands at
   the BOTTOM, not the top. A comment in `ModConfig` asserted the opposite and was wrong; corrected,
   and the section name is deliberately left alone, because renaming it now would orphan the stamp in

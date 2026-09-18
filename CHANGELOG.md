@@ -39,6 +39,19 @@ assertions that could not fail were found and fixed: one stated the case-insensi
 out to be false, and one "a second boot does not migrate again" was passing because the test's
 config file was never actually stamped, so it migrated a second time and looked identical.
 
+- **Two more corrections, found by auditing the sibling ports (same day).**
+  - **`wrath status` reported the plan's INTENT, not what happened.** The summary is written
+    before a single step runs, and a rebase row naming a key this build no longer binds
+    warns and moves on — so the one line the owner reads could claim a value was moved that
+    was never found, with the only contradiction a warning hundreds of log lines earlier.
+    Refusals now correct the summary, and the count is per boot.
+  - Ragnarok's Wrath retires no config key, so the retirement-failure gate the two sibling
+    mods gained the same day has nothing here to guard and was deliberately NOT ported.
+    Dead machinery reads as a feature that works.
+
+  Harness 343 → 345, and seven mutations of the migration are each caught by a named
+  assertion.
+
 ## 0.27.0
 
 - **Valheim 1.0.7 support. This release REQUIRES it, and does not run on 0.2x.** The 1.0
