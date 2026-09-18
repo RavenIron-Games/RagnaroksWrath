@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using UnityEngine;
@@ -552,9 +553,67 @@ namespace RagnaroksWrath.Tests
                 snap[ConfigLedger.Slot("1 - Core", "TickBudgetMs")] == "2");
             Check("## banner lines are not mistaken for keys",
                 !snap.ContainsKey(ConfigLedger.Slot("", "## Settings file was created by plugin Ragnarok's Wrath v0")));
-            Check("keys are matched ignoring case, as BepInEx writes them",
-                snap.ContainsKey(ConfigLedger.Slot("6 - WEATHER", "stormsforceweather")));
+            // CORRECTED 2026-09-18. This asserted the opposite, and stated it as a fact about
+            // BepInEx: "keys are matched ignoring case, as BepInEx writes them". BepInEx's
+            // ConfigDefinition.Equals is the two-argument string.Equals over a case-sensitive
+            // GetHashCode, so a mis-cased line is a DIFFERENT key there - it binds nothing and
+            // becomes an orphan. An ignore-case snapshot answers "present" for a key BepInEx
+            // considers absent, which silently cancels a backfill and then stamps the version,
+            // making it permanent. This mod ships a live backfill, so that was reachable.
+            Check("the snapshot is ORDINAL and case-SENSITIVE, matching BepInEx's own key comparison",
+                !snap.ContainsKey(ConfigLedger.Slot("6 - WEATHER", "stormsforceweather")));
+            Check("and still finds the key spelled the way BepInEx wrote it",
+                snap.ContainsKey(ConfigLedger.Slot("6 - Weather", "StormsForceWeather")));
             Check("parsing null never throws", ConfigLedger.ParseIni(null).Count == 0);
+
+            // ---- A hand-edited or corrupt stamp must not become a loop bound. ConfigVersion
+            //      carries no AcceptableValueRange (removed 2026-09-18, because BepInEx clamps
+            //      silently and a ceiling would one day refuse the stamp), so a large negative
+            //      number is reachable by hand - and an unclamped window ran from there.
+            var negativeSnapshot = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { ConfigLedger.Slot("1 - Core", "TickBudgetMs"), "2" },
+            };
+            var negativeClock = System.Diagnostics.Stopwatch.StartNew();
+            var fromNegative = ConfigLedger.Plan(negativeSnapshot, -2000000000);
+            negativeClock.Stop();
+            Check("a wildly negative stamp still plans the version 1 backfill",
+                fromNegative.Backfilled.Count == 1);
+            Check($"and costs ONE step rather than two billion ({negativeClock.ElapsedMilliseconds} ms)",
+                negativeClock.ElapsedMilliseconds < 250);
+
+            // ---- One slot, one decision. Two rungs naming the same key judged it twice against
+            //      the same unchanged snapshot, so one key could be reported and reset once per
+            //      rung. The shipped Rebases table is empty, so this needs the table seam.
+            var twoRungs = new Dictionary<int, ConfigLedger.Rebase[]>
+            {
+                { 1, new[] { new ConfigLedger.Rebase { Section = "1 - Core", Key = "TickBudgetMs", OldDefaults = new[] { "2" } } } },
+                { 2, new[] { new ConfigLedger.Rebase { Section = "1 - Core", Key = "TickBudgetMs", OldDefaults = new[] { "2" } } } },
+            };
+            var decidedOnce = ConfigLedger.Plan(negativeSnapshot, 0, 2, twoRungs,
+                new Dictionary<int, ConfigLedger.Backfill[]>());
+            Check($"a key named by two rungs is decided ONCE, by the first that matches ({decidedOnce.ResetToDefault.Count})",
+                decidedOnce.ResetToDefault.Count == 1);
+
+            // ---- The rebase rules themselves. The shipped table is EMPTY, so none of this had
+            //      ever executed: the first real rebase would have been its first run anywhere.
+            var adminSnapshot = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { ConfigLedger.Slot("1 - Core", "TickBudgetMs"), "4" },
+            };
+            var oneRung = new Dictionary<int, ConfigLedger.Rebase[]>
+            {
+                { 1, new[] { new ConfigLedger.Rebase { Section = "1 - Core", Key = "TickBudgetMs", OldDefaults = new[] { "1", "2" } } } },
+            };
+            var noBackfills = new Dictionary<int, ConfigLedger.Backfill[]>();
+            Check("a stored value equal to an old shipped default is moved to the new one",
+                ConfigLedger.Plan(negativeSnapshot, 0, 1, oneRung, noBackfills).ResetToDefault.Count == 1);
+            Check("a value the admin chose is KEPT, and reported with what it holds",
+                ConfigLedger.Plan(adminSnapshot, 0, 1, oneRung, noBackfills).Kept[0].Value == "4");
+            Check("old defaults are compared as exact TEXT, so '2.0' is not '2'",
+                ConfigLedger.Plan(new Dictionary<string, string>(StringComparer.Ordinal)
+                    { { ConfigLedger.Slot("1 - Core", "TickBudgetMs"), "2.0" } },
+                    0, 1, oneRung, noBackfills).Kept.Count == 1);
 
             // A value may itself contain '=' - only the FIRST one separates.
             var eq = ConfigLedger.ParseIni(new[] { "[S]", "K = a=b=c" });
@@ -658,10 +717,31 @@ namespace RagnaroksWrath.Tests
 
                 // Running again over the now-stamped file must be a no-op, not a second migration:
                 // an admin who raises StormDryChance after upgrading must keep their value.
+                //
+                // The stamp has to be written HERE. The stub's Save() is a counter, not a writer,
+                // so the file on disk is still the pre-migration one and a second Bind against it
+                // would simply migrate again — which is what this assertion was quietly measuring
+                // before 2026-09-18. Writing the post-migration state makes it test the
+                // short-circuit it claims to test.
+                File.WriteAllLines(path, new[]
+                {
+                    "[" + ConfigLedger.MetaSection + "]",
+                    ConfigLedger.VersionKey + " = " + ConfigLedger.CurrentVersion.ToString(CultureInfo.InvariantCulture),
+                    "",
+                    "[6 - Weather]",
+                    "StormsForceWeather = true",
+                    "StormForcedEnvironment = ThunderStorm",
+                    "StormDryChance = 0",
+                });
                 var second = new ConfigFile { ConfigFilePath = path };
                 ModConfig.Bind(second);
                 Check("a second boot does not migrate an already-stamped file again",
                     ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
+                // The stamp alone cannot prove the short-circuit: re-planning a current file finds
+                // the backfilled key PRESENT, skips it, and leaves the same stamp behind. The
+                // summary is the only thing that differs, and it is what `wrath status` now reads.
+                Check("and reports NO migration summary, because it short-circuited before planning one",
+                    ConfigMigration.LastSummary == "");
 
                 // A FRESH INSTALL must get the shipped default instead, or the feature ships dead.
                 var fresh = new ConfigFile { ConfigFilePath = Path.Combine(dir, "does_not_exist.cfg") };
@@ -670,6 +750,97 @@ namespace RagnaroksWrath.Tests
                     Math.Abs(ModConfig.StormDryChance.Value - 0.5f) < 0.0001f);
                 Check("a fresh install is stamped too, so it never migrates later",
                     ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
+
+                // ---- THE STAMP ONLY GOES UP (fixed 2026-09-18). A file written by a NEWER build
+                //      has already had rungs this build knows nothing about. An unconditional
+                //      assignment drags it down on a rollback, and the next upgrade then replays
+                //      those rungs against values the owner has since chosen - which a rebase
+                //      cannot tell from the old default it happens to equal.
+                string futurePath = Path.Combine(dir, "from_the_future.cfg");
+                File.WriteAllLines(futurePath, new[]
+                {
+                    "[" + ConfigLedger.MetaSection + "]",
+                    ConfigLedger.VersionKey + " = 7",
+                    "",
+                    "[6 - Weather]",
+                    "StormDryChance = 0.75",
+                });
+                var future = new ConfigFile { ConfigFilePath = futurePath };
+                ModConfig.Bind(future);
+                Check("a file stamped ABOVE this build's layout keeps its own stamp rather than being dragged back",
+                    ModConfig.ConfigVersion.Value == 7);
+                Check("and a newer file's values are left alone by an older build",
+                    Math.Abs(ModConfig.StormDryChance.Value - 0.75f) < 0.0001f);
+
+                // ---- A MIS-CASED line is a different key to BepInEx, so it must NOT satisfy the
+                //      backfill's absence test. Before the fix this file skipped the backfill and
+                //      took the shipped 0.5, silently changing a live world, and then stamped.
+                string misCasedPath = Path.Combine(dir, "mis_cased.cfg");
+                File.WriteAllLines(misCasedPath, new[]
+                {
+                    "[6 - Weather]",
+                    "stormdrychance = 0.5",
+                });
+                var misCased = new ConfigFile { ConfigFilePath = misCasedPath };
+                ModConfig.Bind(misCased);
+                Check("a mis-cased line does not satisfy the backfill's absence test, so the world still keeps its one sky",
+                    Math.Abs(ModConfig.StormDryChance.Value - 0f) < 0.0001f);
+
+                // ---- THE APPLY PATH. The shipped ledger has one rung, so the reset loop and every
+                //      failure branch had never run anywhere. Driven here with synthetic plans.
+                var live = new ConfigFile();
+                ModConfig.Bind(live);
+
+                ModConfig.StormDryChance.Value = 0.9f;
+                var resetPlan = new ConfigLedger.MigrationPlan();
+                resetPlan.ResetToDefault.Add(ConfigLedger.Slot("6 - Weather", "StormDryChance"));
+                ConfigMigration.Apply(live, resetPlan);
+                Check("applying a rebase puts the entry back to its SHIPPED default",
+                    Math.Abs(ModConfig.StormDryChance.Value - 0.5f) < 0.0001f);
+
+                // A value BepInEx cannot parse is swallowed by its own SetSerializedValue, which
+                // is why the try/catch that used to wrap it was unreachable code. The mod must SAY
+                // the backfill did not land, or it stamps the version in silence.
+                float beforeBad = ModConfig.StormDryChance.Value;
+                var badPlan = new ConfigLedger.MigrationPlan();
+                badPlan.Backfilled.Add(new ConfigLedger.BackfilledSlot
+                {
+                    Slot = ConfigLedger.Slot("6 - Weather", "StormDryChance"), Value = "not-a-number", Because = "test",
+                });
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ConfigMigration.Apply(live, badPlan);
+                Check("an unparseable backfill leaves the entry alone rather than corrupting it",
+                    Math.Abs(ModConfig.StormDryChance.Value - beforeBad) < 0.0001f);
+                Check("and the mod NAMES the slot it could not set, rather than stamping in silence",
+                    RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("6 - Weather::StormDryChance"));
+
+                // A CLAMPED value still MOVES the entry, so a did-it-move check calls it success.
+                // StormDryChance is a 0..1 share, so 9 lands as 1 - a live world would start
+                // rolling a dry storm every single time, silently.
+                var clampPlan = new ConfigLedger.MigrationPlan();
+                clampPlan.Backfilled.Add(new ConfigLedger.BackfilledSlot
+                {
+                    Slot = ConfigLedger.Slot("6 - Weather", "StormDryChance"), Value = "9", Because = "test",
+                });
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ConfigMigration.Apply(live, clampPlan);
+                Check("an out-of-range backfill is CLAMPED by the config system rather than refused",
+                    Math.Abs(ModConfig.StormDryChance.Value - 1f) < 0.0001f);
+                Check("and the mod says it stored something other than what the ledger asked for",
+                    RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("rather than the '9'"));
+
+                // A ledger row naming a key this build does not bind must warn and carry on, not
+                // throw: one bad row would otherwise abandon every step after it.
+                bool threw = false;
+                var ghostPlan = new ConfigLedger.MigrationPlan();
+                ghostPlan.ResetToDefault.Add(ConfigLedger.Slot("9 - Nope", "NoSuchKey"));
+                ghostPlan.Backfilled.Add(new ConfigLedger.BackfilledSlot { Slot = "also::missing", Value = "1", Because = "test" });
+                try { ConfigMigration.Apply(live, ghostPlan); } catch { threw = true; }
+                Check("a ledger row naming an unknown key warns and continues rather than throwing", !threw);
+
+                threw = false;
+                try { ConfigMigration.Apply(null, resetPlan); ConfigMigration.Apply(live, null); } catch { threw = true; }
+                Check("Apply survives a null config or a null plan", !threw);
             }
             finally
             {

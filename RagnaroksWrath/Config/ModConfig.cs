@@ -1146,17 +1146,25 @@ namespace RavenIron.RagnaroksWrath.Config
                     new AcceptableValueRange<float>(0f, 1f)));
 
             // Bound LAST, with every other key already in place, so the migration below can reach
-            // any of them. Its section sorts to the top of the written file on its own, because
-            // BepInEx orders sections alphabetically and "Meta" beats "1 - Core" - a digit is not
-            // a letter. That is cosmetic; what matters is that it is bound before Finish stamps it.
+            // any of them.
+            //
+            // This comment used to claim the section sorts to the TOP of the written file because
+            // "a digit is not a letter". That is backwards, and was corrected on 2026-09-18 by
+            // reading ConfigFile.Save: it groups by section and orders by the section NAME, so
+            // "Meta" sorts BELOW "1 - Core" and lands at the bottom. Purely cosmetic, and left
+            // alone on purpose - renaming the section now would orphan the stamp in every file
+            // already written, so every one of them would re-migrate and leave a dead [Meta] line
+            // behind. (Undertow, which had not shipped one yet, uses "0 - Meta" instead.)
+            //
+            // NO AcceptableValueRange, removed 2026-09-18. BepInEx CLAMPS an out-of-range value
+            // silently, so a ceiling here would one day quietly refuse the stamp and turn this into
+            // a migration that re-applies on every single boot. A stamp is not a dial.
             ConfigVersion = cfg.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0,
-                new ConfigDescription(
-                    "Which config LAYOUT this file was last written for. Not the mod's version, " +
-                    "and not something to edit: the mod stamps it after migrating an older file, " +
-                    "and reads it to know what is already done. Lower it and a migration that has " +
-                    "already happened runs again; raise it and one that has not is skipped. A file " +
-                    "written before this existed reads as 0, which is correct.",
-                    new AcceptableValueRange<int>(0, 1000)));
+                "Which config LAYOUT this file was last written for. Not the mod's version, " +
+                "and not something to edit: the mod stamps it after migrating an older file, " +
+                "and reads it to know what is already done. Lower it and a migration that has " +
+                "already happened runs again; raise it and one that has not is skipped. A file " +
+                "written before this existed reads as 0, which is correct.");
 
             // AFTER every bind: apply what Begin planned against the pre-bind snapshot, stamp the
             // version, save. Skipped entirely on a fresh install, which needs no migrating.

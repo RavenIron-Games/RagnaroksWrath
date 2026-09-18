@@ -127,11 +127,32 @@ namespace HarmonyLib
 
 namespace RavenIron.RagnaroksWrath
 {
+    /// <summary>
+    /// Routes the plugin's log to the console so a failing test shows the boot line it would have
+    /// written — and RECORDS it, because several of the migration's guarantees ARE the log line. A
+    /// backfill that BepInEx clamped still changes the entry, so "did the value move" cannot tell
+    /// it from one that landed correctly; the only difference the outside world can see is that the
+    /// mod said so. An assertion about a silent failure has to be able to hear the noise.
+    /// </summary>
     public class TestLog
     {
-        public void LogInfo(object o)    => Console.WriteLine($"      [info]  {o}");
-        public void LogWarning(object o) => Console.WriteLine($"      [warn]  {o}");
-        public void LogError(object o)   => Console.WriteLine($"      [error] {o}");
+        public readonly List<string> Messages = new List<string>();
+
+        public void LogInfo(object o)    { Record("info", o); }
+        public void LogWarning(object o) { Record("warn", o); }
+        public void LogError(object o)   { Record("error", o); }
+
+        private void Record(string level, object o)
+        {
+            string line = $"[{level}] {o}";
+            Messages.Add(line);
+            Console.WriteLine($"      {line}");
+        }
+
+        public void Clear() => Messages.Clear();
+
+        public bool Said(string fragment)
+            => Messages.Exists(m => m.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0);
     }
 
     public static class RagnaroksWrath
@@ -163,8 +184,15 @@ namespace BepInEx.Configuration
     }
 
     /// <summary>
-    /// Enough of BepInEx's ConfigDefinition for the migration to address a key.
-    /// Ordinal ignore-case on both halves, matching the real one.
+    /// Enough of BepInEx's ConfigDefinition for the migration to address a key. ORDINAL AND
+    /// CASE-SENSITIVE, corrected 2026-09-18.
+    ///
+    /// This said "ordinal ignore-case on both halves, matching the real one" and implemented that.
+    /// It does not match: BepInEx's `Equals` is `string.Equals(Key, other.Key) &&
+    /// string.Equals(Section, other.Section)` — the two-argument overload — over a case-sensitive
+    /// `GetHashCode` (read out of libs\BepInEx.dll with ilspycmd). A mis-cased ledger row would
+    /// have found its entry here and missed it in game, so every apply assertion was passing for a
+    /// reason that does not hold on a real server.
     /// </summary>
     public class ConfigDefinition
     {
@@ -175,37 +203,82 @@ namespace BepInEx.Configuration
 
         public override bool Equals(object obj)
             => obj is ConfigDefinition d
-               && string.Equals(d.Section, Section, StringComparison.OrdinalIgnoreCase)
-               && string.Equals(d.Key, Key, StringComparison.OrdinalIgnoreCase);
+               && string.Equals(d.Section, Section, StringComparison.Ordinal)
+               && string.Equals(d.Key, Key, StringComparison.Ordinal);
 
         public override int GetHashCode()
-            => (Section ?? "").ToLowerInvariant().GetHashCode() ^ (Key ?? "").ToLowerInvariant().GetHashCode();
+            => ((Key ?? "").GetHashCode() * 397) ^ (Section ?? "").GetHashCode();
     }
 
     public abstract class ConfigEntryBase
     {
         public abstract object BoxedValue { get; set; }
         public abstract object DefaultValue { get; }
+        public abstract string GetSerializedValue();
         public abstract void SetSerializedValue(string value);
     }
 
     public class ConfigEntry<T> : ConfigEntryBase
     {
         private readonly T _default;
+        private readonly ConfigDescription _description;
+        private T _value;
 
-        public T Value { get; set; }
-        public ConfigEntry(T defaultValue) { _default = defaultValue; Value = defaultValue; }
+        /// <summary>
+        /// CLAMPS on the way in, because the real one does: BepInEx's setter runs
+        /// `value = ClampValue(value)` against the entry's AcceptableValueRange, and
+        /// AcceptableValueRange.Clamp returns MinValue or MaxValue rather than refusing. Without
+        /// this, a test cannot tell a backfill that landed from one that landed CLAMPED — and this
+        /// mod has a LIVE backfill rung, so that distinction is not hypothetical here.
+        /// </summary>
+        public T Value
+        {
+            get => _value;
+            set => _value = Clamp(value);
+        }
+
+        public ConfigEntry(T defaultValue, ConfigDescription description = null)
+        {
+            _default = defaultValue;
+            _description = description;
+            _value = defaultValue;
+        }
+
+        private T Clamp(T candidate)
+        {
+            if (_description?.AcceptableValues is AcceptableValueRange<T> range && candidate is IComparable<T> c)
+            {
+                if (c.CompareTo(range.MinValue) < 0) return range.MinValue;
+                if (c.CompareTo(range.MaxValue) > 0) return range.MaxValue;
+            }
+            return candidate;
+        }
 
         public override object BoxedValue { get => Value; set => Value = (T)value; }
         public override object DefaultValue => _default;
 
         /// <summary>
-        /// Invariant culture, deliberately: the real BepInEx writes and reads config values
-        /// invariantly, and a comma-decimal machine parsing "0.5" as 5 is exactly the locale bug
-        /// this repo's working agreement warns about for anything crossing a file.
+        /// Invariant culture, and lower-case for a bool, because that is how BepInEx's own
+        /// TomlTypeConverter spells a config value. A comma-decimal machine writing "0,5" where the
+        /// shipping mod writes "0.5" is exactly the locale bug this repo's working agreement warns
+        /// about for anything crossing a file.
+        /// </summary>
+        public override string GetSerializedValue()
+            => Value is bool b ? (b ? "true" : "false") : Convert.ToString(Value, CultureInfo.InvariantCulture);
+
+        /// <summary>
+        /// SWALLOWS a value it cannot parse and leaves the entry untouched — not laziness, but what
+        /// the real one does: BepInEx's ConfigEntryBase.SetSerializedValue catches every exception
+        /// itself, logs its own warning and returns (read out of libs\BepInEx.dll with ilspycmd,
+        /// 2026-09-18). That is why the try/catch this file's migration used to wrap around it was
+        /// unreachable code, and why ApplyBackfill now reads the value back instead. A stub that
+        /// threw here would let that check pass for the wrong reason.
         /// </summary>
         public override void SetSerializedValue(string value)
-            => Value = (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+        {
+            try { Value = (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture); }
+            catch { }
+        }
     }
 
     /// <summary>
@@ -228,10 +301,10 @@ namespace BepInEx.Configuration
 
         public ConfigEntry<T> Bind<T>(string section, string key, T defaultValue,
                                       ConfigDescription description = null)
-            => BindCore(section, key, defaultValue);
+            => BindCore(section, key, defaultValue, description);
 
         public ConfigEntry<T> Bind<T>(string section, string key, T defaultValue, string description)
-            => BindCore(section, key, defaultValue);
+            => BindCore(section, key, defaultValue, new ConfigDescription(description));
 
         /// <summary>
         /// Values already in the file, loaded once on the first Bind — because the real BepInEx
@@ -247,7 +320,8 @@ namespace BepInEx.Configuration
         /// </summary>
         private Dictionary<string, string> _stored;
 
-        private ConfigEntry<T> BindCore<T>(string section, string key, T defaultValue)
+        private ConfigEntry<T> BindCore<T>(string section, string key, T defaultValue,
+                                           ConfigDescription description)
         {
             _bound.Add($"{section}/{key}");
 
@@ -256,12 +330,13 @@ namespace BepInEx.Configuration
 
             if (_stored == null)
             {
+                // Ordinal, matching both the shipping ParseIni and BepInEx's own key comparison.
                 _stored = !string.IsNullOrEmpty(ConfigFilePath) && System.IO.File.Exists(ConfigFilePath)
                     ? RavenIron.RagnaroksWrath.Core.ConfigLedger.ParseIni(System.IO.File.ReadAllLines(ConfigFilePath))
-                    : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    : new Dictionary<string, string>(StringComparer.Ordinal);
             }
 
-            var entry = new ConfigEntry<T>(defaultValue);
+            var entry = new ConfigEntry<T>(defaultValue, description);
             if (_stored.TryGetValue(section + "::" + key, out string raw))
             {
                 // A value the file cannot express as T is what BepInEx itself treats as absent.

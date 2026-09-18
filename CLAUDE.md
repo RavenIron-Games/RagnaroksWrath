@@ -232,6 +232,51 @@ overlap if it is ever installed alongside.
 
 ## Known traps
 
+- **BepInEx's `ConfigDefinition` is ORDINAL AND CASE-SENSITIVE**, and the config migration was
+  written on the opposite assumption until 2026-09-18. `Equals` is
+  `string.Equals(Key, other.Key) && string.Equals(Section, other.Section)` — the two-argument
+  overload — over a case-sensitive `GetHashCode` (read out of `libs\BepInEx.dll` with `ilspycmd`).
+  So `stormdrychance` and `StormDryChance` are two DIFFERENT keys: one binds, the other sits in the
+  orphan table and is written back on every save. `ConfigLedger.ParseIni` keyed its snapshot
+  OrdinalIgnoreCase, so a file with one mis-cased line answered "present" for a key BepInEx
+  considered absent — which SKIPPED the 0.27.0 backfill, took the shipped `StormDryChance` of 0.5,
+  and stamped. A silent change to a live world, made permanent by the stamp, from the one mechanism
+  built to prevent exactly that. Fixed in 0.27.1; the harness pins it.
+
+- **`ConfigEntryBase.SetSerializedValue` SWALLOWS a value it cannot parse.** Its whole body is a
+  try/catch that logs a BepInEx warning and leaves the entry untouched. So the try/catch this repo
+  wrapped around it was unreachable code, and a wrong value in `ConfigLedger` was a silent no-op
+  followed by a confident version stamp. **And `ConfigEntry<T>`'s setter CLAMPS** into the entry's
+  `AcceptableValueRange` rather than refusing, so an out-of-range value parses, stores something
+  else, and MOVES the entry — which a did-it-move check calls success. `ApplyBackfill` now reads the
+  value back and names the slot when what landed is not what was asked for.
+
+- **Never put an `AcceptableValueRange` on `ConfigVersion`.** BepInEx clamps out-of-range values
+  silently, so a ceiling would one day refuse the stamp and turn the migration into something that
+  re-applies on every boot. Removed 2026-09-18. For the same reason a NEGATIVE stamp is reachable by
+  hand, and `Plan` must clamp it — unclamped it counted up from the stored number, measured at
+  eighteen seconds on the boot thread for -2000000000.
+
+- **The version stamp is a HIGH-WATER MARK, not an assignment.** A file carrying a higher version was
+  written by a newer build whose rungs have already run. Writing `CurrentVersion` unconditionally
+  drags it down on a rollback, and the next upgrade then replays those rungs against values the owner
+  has since chosen — which a rebase cannot distinguish from the old default it happens to equal.
+
+- **`ConfigFile.OrphanedEntries` is PRIVATE and BepInEx writes every orphan back out on each `Save`.**
+  A key you simply stop binding rides along in the file forever. Dropping one is `Bind` under a
+  throwaway default then `Remove`, both public. Never name the property — house rule 5's Mono JIT
+  failure applies. (No retire rung exists here yet; FireFront and Undertow both carry the code.)
+
+- **BepInEx orders config sections by NAME when it writes the file**, so the `Meta` section lands at
+  the BOTTOM, not the top. A comment in `ModConfig` asserted the opposite and was wrong; corrected,
+  and the section name is deliberately left alone, because renaming it now would orphan the stamp in
+  every file already written. Undertow, which had not shipped one, uses `0 - Meta`.
+
+- **`libs\BepInEx.dll` is NOT publicized** — fetch-libs copies it verbatim from the game's
+  `BepInEx\core` — so what compiles against it is what runs, and house rule 5's trap does not apply
+  to BepInEx members. It very much still applies to the publicized Valheim assemblies.
+
+
 - **Valheim 1.0.12 (2026-09-11) bumped the NETWORK VERSION, 39 → 40.** Two days after 1.0.7, and the
   only thing in it that matters to anyone here. `ZNet.RPC_PeerInfo` refuses outright any peer whose
   number differs, so a 1.0.12 client cannot join a 1.0.7 server or the reverse — everyone updates

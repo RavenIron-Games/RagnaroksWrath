@@ -132,6 +132,16 @@ namespace RavenIron.RagnaroksWrath.Patches
                 }
                 else sb.Append("no local player.");
             }
+
+            // The config layout, on both roles. ConfigMigration declared LastSummary "kept for
+            // `wrath status`" and then nothing ever read it — a dead property until 2026-09-18.
+            // The stamp prints unconditionally because the two commonest boots, a fresh install and
+            // a file already at the current layout, set no summary at all; the summary prints
+            // whenever this boot planned a migration, which is the only time there is news.
+            sb.Append($"\nconfig layout v{ModConfig.ConfigVersion.Value.ToString(CultureInfo.InvariantCulture)}");
+            string migration = ConfigMigration.LastSummary;
+            sb.Append(string.IsNullOrEmpty(migration) ? " (nothing migrated this boot)" : $" — {migration}");
+
             args.Context.AddString(sb.ToString());
         }
 

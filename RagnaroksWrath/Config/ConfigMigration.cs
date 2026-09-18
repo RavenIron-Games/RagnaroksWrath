@@ -111,42 +111,7 @@ namespace RavenIron.RagnaroksWrath.Config
         {
             try
             {
-                if (_plan != null && cfg != null)
-                {
-                    foreach (string slot in _plan.ResetToDefault)
-                    {
-                        ConfigEntryBase entry = Lookup(cfg, slot);
-                        if (entry == null) continue;
-                        entry.BoxedValue = entry.DefaultValue;
-                    }
-
-                    foreach (ConfigLedger.BackfilledSlot b in _plan.Backfilled)
-                    {
-                        ConfigEntryBase entry = Lookup(cfg, b.Slot);
-                        if (entry == null)
-                        {
-                            // The ledger names a key this build does not bind. Only reachable by
-                            // editing one file and not the other, and silence would make it
-                            // permanent: the version stamps, and the backfill never runs again.
-                            RagnaroksWrath.Log.LogWarning(
-                                "Config migration wanted to set " + b.Slot + " but this build binds no such key. " +
-                                "Nothing was changed for it. This is a bug in ConfigLedger, not in your file.");
-                            continue;
-                        }
-
-                        try
-                        {
-                            entry.SetSerializedValue(b.Value);
-                        }
-                        catch (Exception ex)
-                        {
-                            RagnaroksWrath.Log.LogWarning(
-                                "Config migration could not set " + b.Slot + " to '" + b.Value + "': " + ex.Message +
-                                ". That key keeps its shipped default, which may change how this world behaves - " +
-                                "see the changelog for what it does.");
-                        }
-                    }
-                }
+                if (_plan != null && cfg != null) Apply(cfg, _plan);
 
                 if (_state == MigrationState.Failed)
                 {
@@ -156,7 +121,14 @@ namespace RavenIron.RagnaroksWrath.Config
                 }
                 else if (versionEntry != null)
                 {
-                    versionEntry.Value = ConfigLedger.CurrentVersion;
+                    // THE STAMP ONLY EVER GOES UP. A file carrying a HIGHER version was written by
+                    // a newer build whose rungs have already run, and this build knows nothing
+                    // about them. Roll the mod back for an afternoon and an unconditional
+                    // assignment drags the stamp down; roll forward and those rungs replay against
+                    // values the owner has since chosen — and a rebase cannot tell a deliberate
+                    // choice from the old default it happens to equal. Corrected 2026-09-18.
+                    if (versionEntry.Value < ConfigLedger.CurrentVersion)
+                        versionEntry.Value = ConfigLedger.CurrentVersion;
                 }
 
                 if (cfg != null) cfg.Save();
@@ -174,6 +146,98 @@ namespace RavenIron.RagnaroksWrath.Config
                 _state = MigrationState.Fresh;
                 _backedUp = false;
             }
+        }
+
+        /// <summary>
+        /// Apply a plan to the bound entries. Separated from <see cref="Finish"/> on 2026-09-18 so
+        /// the harness can drive it with a synthetic plan: the shipped ledger has exactly one rung,
+        /// so the reset loop and every failure branch below it had never executed anywhere, and the
+        /// first real rebase would have been the first run of that code on somebody's server.
+        /// Internal rather than public — the test project compiles this source into its own
+        /// assembly, so it can reach this, and nothing outside the mod can.
+        /// </summary>
+        internal static void Apply(ConfigFile cfg, ConfigLedger.MigrationPlan plan)
+        {
+            if (cfg == null || plan == null) return;
+
+            foreach (string slot in plan.ResetToDefault)
+            {
+                ConfigEntryBase entry = Lookup(cfg, slot);
+                if (entry == null) { WarnUnknownSlot(slot); continue; }
+                entry.BoxedValue = entry.DefaultValue;
+            }
+
+            foreach (ConfigLedger.BackfilledSlot b in plan.Backfilled)
+            {
+                ConfigEntryBase entry = Lookup(cfg, b.Slot);
+                if (entry == null) { WarnUnknownSlot(b.Slot); continue; }
+                ApplyBackfill(entry, b);
+            }
+        }
+
+        /// <summary>
+        /// The ledger names a key this build does not bind. Only reachable by editing one file and
+        /// not the other, and silence would make it permanent: the version stamps and the step
+        /// never runs again.
+        /// </summary>
+        private static void WarnUnknownSlot(string slot)
+        {
+            RagnaroksWrath.Log.LogWarning(
+                "Config migration wanted to touch " + slot + " but this build binds no such key. " +
+                "Nothing was changed for it. This is a bug in ConfigLedger, not in your file.");
+        }
+
+        /// <summary>
+        /// Write a backfill and CHECK IT LANDED. This replaced a try/catch around
+        /// <c>SetSerializedValue</c> on 2026-09-18, which was UNREACHABLE CODE: that method's whole
+        /// body is its own try/catch, which logs a BepInEx warning and leaves the value untouched
+        /// (read out of libs\BepInEx.dll with ilspycmd). So a value BepInEx would not parse was a
+        /// silent no-op followed by a confident version stamp — and the stamp makes it permanent.
+        ///
+        /// Asking "did it land on what we asked for" rather than "did it move" also catches the
+        /// second failure hiding here: <c>ConfigEntry&lt;T&gt;</c>'s setter CLAMPS into the entry's
+        /// AcceptableValueRange rather than refusing, so an out-of-range legacy value parses fine,
+        /// stores something else, and moves the entry — which a did-it-move test calls success.
+        /// </summary>
+        private static void ApplyBackfill(ConfigEntryBase entry, ConfigLedger.BackfilledSlot b)
+        {
+            entry.SetSerializedValue(b.Value);
+            string landed = SerializedOrNull(entry);
+
+            if (ValuesAgree(b.Value, landed)) return;
+
+            RagnaroksWrath.Log.LogWarning(
+                "Config migration set " + b.Slot + " to '" + (landed ?? "?") + "' rather than the '" + b.Value +
+                "' it intended - BepInEx either would not parse that text for this setting's type or clamped it " +
+                "into the setting's allowed range. This world may behave differently from before; see the " +
+                "changelog for what that key does. This is a bug in ConfigLedger, not in your file.");
+        }
+
+        /// <summary>
+        /// Whether an entry ended up holding what the ledger asked for. Numbers compare as numbers,
+        /// because a round trip legitimately reformats them ("0.50" comes back "0.5") and a
+        /// text-only test would cry wolf on every float — including this mod's own
+        /// <c>StormDryChance</c> rung. Everything else is ordinal ignore-case, which covers a bool's
+        /// "true"/"True". InvariantCulture throughout: this text came off a disk.
+        /// </summary>
+        private static bool ValuesAgree(string requested, string actual)
+        {
+            if (requested == null || actual == null) return false;
+
+            double a, c;
+            if (double.TryParse(requested.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out a) &&
+                double.TryParse(actual.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out c))
+            {
+                return Math.Abs(a - c) <= 1e-6 * Math.Max(1.0, Math.Abs(a));
+            }
+
+            return string.Equals(requested.Trim(), actual.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string SerializedOrNull(ConfigEntryBase entry)
+        {
+            try { return entry.GetSerializedValue(); }
+            catch { return null; }
         }
 
         /// <summary>The bound entry for a "Section::Key" slot, or null when this build does not bind it.</summary>

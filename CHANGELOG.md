@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.27.1
+
+**Six fixes to the config migration 0.27.0 shipped, one of which could have changed a live world
+in silence.** They were found by an adversarial review of Undertow's port of this same code, which
+went looking for what the original had got wrong rather than for what it had got right. Nothing
+about storms, seasons or zones changed; this is entirely about protecting the settings you already
+have.
+
+- **The migration compared config keys ignoring case; BepInEx does not.** Its `ConfigDefinition`
+  is ordinal and case-sensitive, so `stormdrychance` and `StormDryChance` are two different keys to
+  it — one binds, the other is ignored. A backfill's whole safety is asking whether a key is
+  absent, so a config carrying one mis-cased line answered "present", SKIPPED the 0.27.0 backfill,
+  quietly took the new `StormDryChance` of 0.5, and then stamped itself as migrated. Exactly the
+  silent change to a running world the migration exists to prevent. Now ordinal, and pinned.
+- **The version stamp could move DOWN.** Roll back to an older build for an afternoon and it
+  rewrote the stamp to its own version, so rolling forward again replayed rungs that had already
+  run — against values you had chosen in the meantime, which a rebase cannot tell from an old
+  default. The stamp is now a high-water mark.
+- **A backfill that did not land reported success.** BepInEx swallows a value it cannot parse and
+  leaves the setting alone, which made the migration's own error handling unreachable code; and it
+  CLAMPS an out-of-range value rather than refusing, which moves the setting to something nobody
+  asked for. Both were silent, and the stamp made them permanent. The value is now read back and
+  the mod says, by name, when it stored something other than what it intended.
+- **A hand-edited negative `ConfigVersion` froze the boot** for eighteen seconds while the
+  migration counted up from it. Treated as 0 now, which is what such a file is.
+- **A key named by two migration steps was judged twice** against the same unchanged file, so one
+  setting could be reported and reset once per step. The first step that matches now owns it.
+- **`ConfigVersion` no longer carries an allowed range.** BepInEx clamps silently, so a ceiling
+  would one day have refused the stamp and turned this into a migration that re-ran on every boot.
+
+**`wrath status` now reports the config layout version**, and the migration's own line when that
+boot migrated anything. The mod had been keeping that summary for the console since 0.27.0 and
+nothing ever read it.
+
+**Harness 324 → 343.** Ten deliberate breakages applied to the shipping source, ten caught. Two
+assertions that could not fail were found and fixed: one stated the case-insensitivity that turned
+out to be false, and one "a second boot does not migrate again" was passing because the test's
+config file was never actually stamped, so it migrated a second time and looked identical.
+
 ## 0.27.0
 
 - **Valheim 1.0.7 support. This release REQUIRES it, and does not run on 0.2x.** The 1.0

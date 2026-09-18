@@ -125,13 +125,27 @@ namespace RavenIron.RagnaroksWrath.Core
 
         /// <summary>
         /// BepInEx config files are plain INI: `[Section]` headers, `#` comments, blank lines, and
-        /// `Key = value` where the value may itself contain `=`. Keyed "Section::Key", ordinal
-        /// ignore-case; the last duplicate wins. Values trimmed. NEVER THROWS — a config this
-        /// cannot read must not stop the mod loading, it must look like a fresh install.
+        /// `Key = value` where the value may itself contain `=`. Keyed "Section::Key"; the last
+        /// duplicate wins; values trimmed. NEVER THROWS — a config this cannot read must not stop
+        /// the mod loading, it must look like a fresh install.
+        ///
+        /// ORDINAL AND CASE-SENSITIVE, corrected 2026-09-18, and that was a real bug rather than a
+        /// stylistic choice. BepInEx is not case-insensitive: `ConfigDefinition.Equals` is
+        /// `string.Equals(Key, other.Key) && string.Equals(Section, other.Section)` — the
+        /// two-argument overload — over a case-sensitive `GetHashCode` (read out of
+        /// libs\BepInEx.dll with ilspycmd). So `stormdrychance` and `StormDryChance` are two
+        /// DIFFERENT keys there: one binds, the other sits in the orphan table.
+        ///
+        /// A backfill's entire safety is its absence test, and an ignore-case snapshot answers
+        /// "present" for a key BepInEx considers absent. A file carrying one mis-cased line would
+        /// therefore have SKIPPED the version 1 backfill, taken the new shipped `StormDryChance` of
+        /// 0.5, and stamped — making a silent change to a live world permanent, which is the one
+        /// thing this file exists to prevent. Found by the adversarial review of Undertow's port of
+        /// this same code; Undertow carries the identical fix.
         /// </summary>
         public static Dictionary<string, string> ParseIni(IEnumerable<string> lines)
         {
-            var into = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var into = new Dictionary<string, string>(StringComparer.Ordinal);
             if (lines == null) return into;
 
             string section = "";
@@ -173,26 +187,59 @@ namespace RavenIron.RagnaroksWrath.Core
 
         /// <summary>
         /// What migrating <paramref name="snapshot"/> from <paramref name="fileVersion"/> to
-        /// <see cref="CurrentVersion"/> does. An empty snapshot (a fresh install, or a file that
-        /// could not be read) plans nothing, and so does a file already at or beyond the current
-        /// version. Steps apply in version order. NEVER THROWS.
+        /// <see cref="CurrentVersion"/> does, against the shipped tables. An empty snapshot (a
+        /// fresh install, or a file that could not be read) plans nothing, and so does a file
+        /// already at or beyond the current version. NEVER THROWS.
         /// </summary>
-        public static MigrationPlan Plan(Dictionary<string, string> snapshot, int fileVersion)
-        {
-            var plan = new MigrationPlan { FromVersion = fileVersion, ToVersion = CurrentVersion };
-            if (snapshot == null || snapshot.Count == 0) return plan;
-            if (fileVersion >= CurrentVersion) return plan;
+        public static MigrationPlan Plan(Dictionary<string, string> snapshot, int fileVersion) =>
+            Plan(snapshot, fileVersion, CurrentVersion, Rebases, Backfills);
 
-            for (int version = fileVersion + 1; version <= CurrentVersion; version++)
+        /// <summary>
+        /// The same thing against tables supplied by the caller, and the whole implementation — the
+        /// overload above is one line of delegation, so this is not a parallel code path.
+        ///
+        /// Added 2026-09-18 so the harness can reach the rules rather than only the one rung that
+        /// happens to ship. The Rebases table is EMPTY, so every rebase rule — old-default matching,
+        /// keeping an admin's value, one-slot-one-decision — was untested until this existed, and
+        /// the first real rebase would have been the first time that code ever ran.
+        /// </summary>
+        public static MigrationPlan Plan(
+            Dictionary<string, string> snapshot,
+            int fileVersion,
+            int toVersion,
+            Dictionary<int, Rebase[]> rebases,
+            Dictionary<int, Backfill[]> backfills)
+        {
+            var plan = new MigrationPlan { FromVersion = fileVersion, ToVersion = toVersion };
+            if (snapshot == null || snapshot.Count == 0) return plan;
+            if (fileVersion >= toVersion) return plan;
+
+            // A NEGATIVE stamp is a hand-edited or corrupt file, and it must not become a loop
+            // bound. Nothing stops an owner typing a large negative number into ConfigVersion, and
+            // without this the window below runs from there — measured at nearly eighteen seconds
+            // on the boot thread for -2000000000. A file claiming to predate version 0 simply IS a
+            // version 0 file.
+            int from = fileVersion < 0 ? 0 : fileVersion;
+
+            // One slot, one decision. Without this a key named by two rungs is judged twice against
+            // the SAME unchanged snapshot — the value never advances along the ladder — so it can
+            // be reported and reset once per rung, and a slot an earlier rung claimed can be
+            // re-classified by a later one. The first rung that matches owns it.
+            var decided = new HashSet<string>(StringComparer.Ordinal);
+
+            for (int version = from + 1; version <= toVersion; version++)
             {
-                Rebase[] rebases;
-                if (Rebases.TryGetValue(version, out rebases) && rebases != null)
+                if (rebases != null && rebases.TryGetValue(version, out var rebaseSteps) && rebaseSteps != null)
                 {
-                    foreach (Rebase r in rebases)
+                    foreach (Rebase r in rebaseSteps)
                     {
                         string slot = Slot(r.Section, r.Key);
+                        if (decided.Contains(slot)) continue;
+
                         string stored;
                         if (!snapshot.TryGetValue(slot, out stored)) continue;
+
+                        decided.Add(slot);
 
                         bool wasOldDefault = false;
                         if (r.OldDefaults != null)
@@ -212,12 +259,12 @@ namespace RavenIron.RagnaroksWrath.Core
                     }
                 }
 
-                Backfill[] backfills;
-                if (Backfills.TryGetValue(version, out backfills) && backfills != null)
+                if (backfills != null && backfills.TryGetValue(version, out var backfillSteps) && backfillSteps != null)
                 {
-                    foreach (Backfill b in backfills)
+                    foreach (Backfill b in backfillSteps)
                     {
                         string slot = Slot(b.Section, b.Key);
+                        if (decided.Contains(slot)) continue;
 
                         // ABSENT ONLY, and this is the whole safety of a backfill. A key already
                         // in the file carries either the admin's choice or a value an earlier
@@ -227,6 +274,7 @@ namespace RavenIron.RagnaroksWrath.Core
                         // shipped default and absence can no longer be observed.
                         if (snapshot.ContainsKey(slot)) continue;
 
+                        decided.Add(slot);
                         plan.Backfilled.Add(new BackfilledSlot
                         {
                             Slot = slot,
