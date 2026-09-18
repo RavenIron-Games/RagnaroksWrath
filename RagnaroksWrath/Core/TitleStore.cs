@@ -29,7 +29,7 @@ namespace RavenIron.RagnaroksWrath.Core
         private static bool _loaded;
 
         /// <summary>Test seam, like Persistence's: when set, used instead of the world path.</summary>
-        internal static string OverridePath;
+        internal static string OverridePath = null;
 
         public static bool IsLoaded => _loaded;
         public static int Count => _titles.Count;

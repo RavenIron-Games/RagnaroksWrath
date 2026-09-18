@@ -57,10 +57,10 @@ namespace RavenIron.RagnaroksWrath.Core
         private static bool _warnedNoSavePath;
 
         /// <summary>Test seam. When set, used instead of the world save directory.</summary>
-        internal static string OverrideDirectory;
+        internal static string OverrideDirectory = null;
 
         /// <summary>Test seam. When set, used instead of the live world uid.</summary>
-        internal static ulong? OverrideWorldUid;
+        internal static ulong? OverrideWorldUid = null;
 
         // ---- public state access --------------------------------------------------------
 

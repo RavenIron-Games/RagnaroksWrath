@@ -58,7 +58,7 @@ namespace RavenIron.RagnaroksWrath.Core
         private static bool _dirty;
 
         /// <summary>Test seam, like its siblings': when set, used instead of the world path.</summary>
-        internal static string OverridePath;
+        internal static string OverridePath = null;
 
         public static bool IsLoaded => _loaded;
         public static int RelicCount => _relics.Count;
