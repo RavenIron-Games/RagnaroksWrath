@@ -37,6 +37,7 @@ namespace RagnaroksWrath.Tests
             PersistenceTests();
             BiomeStateTests();
             StormAreaTests();
+            StormLookTests();
             WindStateTests();
             FireScorchTests();
             PlagueTests();
@@ -513,6 +514,56 @@ namespace RagnaroksWrath.Tests
             Check("a NaN that reaches the drift math is neutralised, not propagated",
                 !float.IsNaN(BiomeDrift.Apply(
                     new ZoneState { Plague = float.NaN }, Hour, 0.02f, 0f, 0f, 1f).Plague));
+        }
+
+        // ---- StormLook --------------------------------------------------------------
+
+        private static void StormLookTests()
+        {
+            Console.WriteLine("\nStormLook");
+
+            // The whole point of the type. If liveness stops recognising either name, that
+            // storm reads as NO STORM: every multiplier off, no lightning, nothing in the log.
+            Check("the wet storm is recognised as a storm", StormLook.IsStorm(StormLook.WetEventName));
+            Check("the dry storm is recognised as a storm", StormLook.IsStorm(StormLook.DryEventName));
+            Check("somebody else's event is not our storm", !StormLook.IsStorm("random_event_foo"));
+            Check("no active event is not a storm", !StormLook.IsStorm(""));
+            Check("a null event name is not a storm", !StormLook.IsStorm(null));
+
+            Check("the dry storm reads as dry", StormLook.IsDry(StormLook.DryEventName));
+            Check("the wet storm does not read as dry", !StormLook.IsDry(StormLook.WetEventName));
+            Check("a null event name does not read as dry", !StormLook.IsDry(null));
+
+            // The original name must never change: vanilla serialises the active event into the
+            // world file, so a rename strands every storm in flight at the moment of an update.
+            Check("the wet storm keeps the name older worlds have saved",
+                StormLook.WetEventName == "ragnarokswrath_devastating_storm");
+            Check("the two storms have distinct names, the only thing vanilla replicates",
+                StormLook.WetEventName != StormLook.DryEventName);
+
+            // Boundaries, because a config file can hold anything and each of these is a silent
+            // gameplay change rather than an error if it goes wrong.
+            Check("chance 0 is always wet, even on a draw of 0",
+                StormLook.Roll(0.0, 0f) == StormLook.WetEventName);
+            Check("chance 0 is always wet on a high draw",
+                StormLook.Roll(0.999, 0f) == StormLook.WetEventName);
+            Check("chance 1 is always dry on a draw of 0",
+                StormLook.Roll(0.0, 1f) == StormLook.DryEventName);
+            Check("chance 1 is always dry on a high draw",
+                StormLook.Roll(0.999, 1f) == StormLook.DryEventName);
+            Check("a nonsense negative chance still yields a real storm",
+                StormLook.Roll(0.5, -5f) == StormLook.WetEventName);
+            Check("a chance above 1 clamps to always dry",
+                StormLook.Roll(0.5, 2f) == StormLook.DryEventName);
+
+            // NextDouble() returns [0,1), so a draw exactly at the chance must fall to WET —
+            // otherwise chance 0.5 would be very slightly biased toward dry.
+            Check("a draw exactly at the chance rolls wet, not dry",
+                StormLook.Roll(0.5, 0.5f) == StormLook.WetEventName);
+            Check("a draw just under the chance rolls dry",
+                StormLook.Roll(0.4999, 0.5f) == StormLook.DryEventName);
+            Check("a draw of 0 rolls dry at even odds",
+                StormLook.Roll(0.0, 0.5f) == StormLook.DryEventName);
         }
 
         // ---- StormArea --------------------------------------------------------------

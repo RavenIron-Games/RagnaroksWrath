@@ -29,6 +29,7 @@
     <Compile Include="..\..\RagnaroksWrath\Core\ZoneState.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\BiomeDrift.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\StormArea.cs" />
+    <Compile Include="..\..\RagnaroksWrath\Core\StormLook.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\WindState.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\FireScorch.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\PlagueSpread.cs" />

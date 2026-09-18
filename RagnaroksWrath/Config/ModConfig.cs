@@ -51,6 +51,8 @@ namespace RavenIron.RagnaroksWrath.Config
         public static ConfigEntry<float>  StormPlagueSpreadMultiplier;
         public static ConfigEntry<bool>   StormsForceWeather;
         public static ConfigEntry<string> StormForcedEnvironment;
+        public static ConfigEntry<string> StormDryEnvironment;
+        public static ConfigEntry<float>  StormDryChance;
         public static ConfigEntry<float>  StormAvoidBaseMeters;
 
         // ---- Wind -----------------------------------------------------------------------
@@ -342,13 +344,28 @@ namespace RavenIron.RagnaroksWrath.Config
                 "machine, and a reconnect does not re-read this file.");
 
             StormForcedEnvironment = cfg.Bind(weather, "StormForcedEnvironment", "ThunderStorm",
-                "Environment name used only when StormsForceWeather is on. Ignored entirely " +
-                "otherwise - with that off, this value is never read and the sky is never set. " +
-                "KNOWN INTERACTION (verified live 2026-08-27): the default ThunderStorm is a " +
-                "WET environment, and rain rightly suppresses storm lightning - so with the " +
-                "look on you get rain but no bolts. Vanilla's 'Eikthyr' is the DRY storm " +
-                "(dark sky, thunder, no rain): use it if you want the look AND lightning " +
-                "fires in the same storm.");
+                "THE WET STORM. Environment name for a storm that rolls rainy; used only when " +
+                "StormsForceWeather is on, and never read otherwise. KNOWN INTERACTION (verified " +
+                "live 2026-08-27, and the whole reason the two looks differ): ThunderStorm is a " +
+                "WET environment, and rain rightly suppresses storm lightning - so a wet storm " +
+                "is loud and drenching and drops no bolts.");
+
+            StormDryEnvironment = cfg.Bind(weather, "StormDryEnvironment", "Eikthyr",
+                "THE DRY STORM. Vanilla's 'Eikthyr' is dark sky and thunder with no rain, so " +
+                "lightning CAN strike under it - the same storm that soaks you does not burn " +
+                "you, and the one that stays dry might. Used only when StormsForceWeather is on. " +
+                "Set this to the same value as StormForcedEnvironment if you want every storm " +
+                "to look alike again.");
+
+            StormDryChance = cfg.Bind(weather, "StormDryChance", 0.5f,
+                new ConfigDescription(
+                    "Chance that a storm rolls DRY rather than wet, decided once per storm on " +
+                    "the server. At the default of 0.5 the two are a coin flip, so the sight of " +
+                    "a dry sky is the warning that this one can start fires. 0 makes every storm " +
+                    "wet (what this mod did before storms had two faces), 1 makes every storm " +
+                    "dry. Only meaningful when StormsForceWeather is on: with it off, both kinds " +
+                    "run under the player's real sky and the roll changes nothing anyone can see.",
+                    new AcceptableValueRange<float>(0f, 1f)));
 
             StormAvoidBaseMeters = cfg.Bind(weather, "StormAvoidBaseMeters", 30f,
                 new ConfigDescription(
