@@ -1,4 +1,5 @@
 using BepInEx.Configuration;
+using RavenIron.RagnaroksWrath.Core;
 
 namespace RavenIron.RagnaroksWrath.Config
 {
@@ -205,8 +206,20 @@ namespace RavenIron.RagnaroksWrath.Config
         public static ConfigEntry<bool> EnableWorldState;
         public static ConfigEntry<bool> EnableZoneSync;
 
+        /// <summary>
+        /// The stamped config layout version. Owners should not edit it: lowering it re-runs a
+        /// migration that has already happened, raising it skips one that has not.
+        /// </summary>
+        public static ConfigEntry<int> ConfigVersion;
+
         public static void Bind(ConfigFile cfg)
         {
+            // BEFORE THE FIRST BIND, and that is the mechanism rather than a tidiness preference.
+            // A backfill acts on a key being ABSENT from the file, and BepInEx's own Bind makes it
+            // present at its shipped default. Snapshot after binding and every backfill quietly
+            // becomes a no-op that still logs success and still stamps its version.
+            ConfigMigration.Begin(cfg);
+
             const string core = "1 - Core";
 
             TickBudgetMs = cfg.Bind(core, "TickBudgetMs", 2.0f,
@@ -1131,6 +1144,23 @@ namespace RavenIron.RagnaroksWrath.Config
                     "gain against recovery, and the thaw is a net loss. Set 0 to make this " +
                     "system purely restorative.",
                     new AcceptableValueRange<float>(0f, 1f)));
+
+            // Bound LAST, with every other key already in place, so the migration below can reach
+            // any of them. Its section sorts to the top of the written file on its own, because
+            // BepInEx orders sections alphabetically and "Meta" beats "1 - Core" - a digit is not
+            // a letter. That is cosmetic; what matters is that it is bound before Finish stamps it.
+            ConfigVersion = cfg.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0,
+                new ConfigDescription(
+                    "Which config LAYOUT this file was last written for. Not the mod's version, " +
+                    "and not something to edit: the mod stamps it after migrating an older file, " +
+                    "and reads it to know what is already done. Lower it and a migration that has " +
+                    "already happened runs again; raise it and one that has not is skipped. A file " +
+                    "written before this existed reads as 0, which is correct.",
+                    new AcceptableValueRange<int>(0, 1000)));
+
+            // AFTER every bind: apply what Begin planned against the pre-bind snapshot, stamp the
+            // version, save. Skipped entirely on a fresh install, which needs no migrating.
+            ConfigMigration.Finish(cfg, ConfigVersion);
         }
     }
 }

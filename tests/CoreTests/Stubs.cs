@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 
 // ---- UnityEngine ------------------------------------------------------------------
@@ -161,29 +162,118 @@ namespace BepInEx.Configuration
         }
     }
 
-    public class ConfigEntry<T>
+    /// <summary>
+    /// Enough of BepInEx's ConfigDefinition for the migration to address a key.
+    /// Ordinal ignore-case on both halves, matching the real one.
+    /// </summary>
+    public class ConfigDefinition
     {
-        public T Value { get; set; }
-        public ConfigEntry(T defaultValue) { Value = defaultValue; }
+        public readonly string Section;
+        public readonly string Key;
+
+        public ConfigDefinition(string section, string key) { Section = section; Key = key; }
+
+        public override bool Equals(object obj)
+            => obj is ConfigDefinition d
+               && string.Equals(d.Section, Section, StringComparison.OrdinalIgnoreCase)
+               && string.Equals(d.Key, Key, StringComparison.OrdinalIgnoreCase);
+
+        public override int GetHashCode()
+            => (Section ?? "").ToLowerInvariant().GetHashCode() ^ (Key ?? "").ToLowerInvariant().GetHashCode();
     }
 
+    public abstract class ConfigEntryBase
+    {
+        public abstract object BoxedValue { get; set; }
+        public abstract object DefaultValue { get; }
+        public abstract void SetSerializedValue(string value);
+    }
+
+    public class ConfigEntry<T> : ConfigEntryBase
+    {
+        private readonly T _default;
+
+        public T Value { get; set; }
+        public ConfigEntry(T defaultValue) { _default = defaultValue; Value = defaultValue; }
+
+        public override object BoxedValue { get => Value; set => Value = (T)value; }
+        public override object DefaultValue => _default;
+
+        /// <summary>
+        /// Invariant culture, deliberately: the real BepInEx writes and reads config values
+        /// invariantly, and a comma-decimal machine parsing "0.5" as 5 is exactly the locale bug
+        /// this repo's working agreement warns about for anything crossing a file.
+        /// </summary>
+        public override void SetSerializedValue(string value)
+            => Value = (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// A ConfigFile that actually REMEMBERS what was bound, so the config migration can be tested
+    /// against the shipping ModConfig rather than described. The original stub returned a fresh
+    /// entry per Bind and stored nothing, which is fine for counting binds and useless for
+    /// proving a migration reached the key it named.
+    /// </summary>
     public class ConfigFile
     {
         private readonly List<string> _bound = new List<string>();
+        private readonly Dictionary<ConfigDefinition, ConfigEntryBase> _entries =
+            new Dictionary<ConfigDefinition, ConfigEntryBase>();
 
         public int BoundCount => _bound.Count;
+        public int SaveCount { get; private set; }
+
+        /// <summary>Where the pre-bind snapshot is read from. Settable so a test can point it at a real temp file.</summary>
+        public string ConfigFilePath { get; set; } = "";
 
         public ConfigEntry<T> Bind<T>(string section, string key, T defaultValue,
                                       ConfigDescription description = null)
-        {
-            _bound.Add($"{section}/{key}");
-            return new ConfigEntry<T>(defaultValue);
-        }
+            => BindCore(section, key, defaultValue);
 
         public ConfigEntry<T> Bind<T>(string section, string key, T defaultValue, string description)
+            => BindCore(section, key, defaultValue);
+
+        /// <summary>
+        /// Values already in the file, loaded once on the first Bind — because the real BepInEx
+        /// applies a stored value over the shipped default, and a stub that did not would make an
+        /// admin's setting invisible to every test. That matters here specifically: a migration
+        /// that trampled a value somebody had already set would pass against a stub that pretends
+        /// nobody ever set one.
+        ///
+        /// Parsed with the shipping ConfigLedger.ParseIni rather than a second parser, per the
+        /// working agreement's "a harness that duplicates logic proves nothing and drifts". That
+        /// parser is pinned separately by its own tests against hand-written expectations, so it
+        /// cannot quietly agree with itself here.
+        /// </summary>
+        private Dictionary<string, string> _stored;
+
+        private ConfigEntry<T> BindCore<T>(string section, string key, T defaultValue)
         {
             _bound.Add($"{section}/{key}");
-            return new ConfigEntry<T>(defaultValue);
+
+            var def = new ConfigDefinition(section, key);
+            if (_entries.TryGetValue(def, out ConfigEntryBase existing)) return (ConfigEntry<T>)existing;
+
+            if (_stored == null)
+            {
+                _stored = !string.IsNullOrEmpty(ConfigFilePath) && System.IO.File.Exists(ConfigFilePath)
+                    ? RavenIron.RagnaroksWrath.Core.ConfigLedger.ParseIni(System.IO.File.ReadAllLines(ConfigFilePath))
+                    : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var entry = new ConfigEntry<T>(defaultValue);
+            if (_stored.TryGetValue(section + "::" + key, out string raw))
+            {
+                // A value the file cannot express as T is what BepInEx itself treats as absent.
+                try { entry.SetSerializedValue(raw); } catch { }
+            }
+
+            _entries[def] = entry;
+            return entry;
         }
+
+        public bool ContainsKey(ConfigDefinition def) => _entries.ContainsKey(def);
+        public ConfigEntryBase this[ConfigDefinition def] => _entries[def];
+        public void Save() { SaveCount++; }
     }
 }

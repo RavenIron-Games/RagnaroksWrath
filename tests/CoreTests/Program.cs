@@ -38,6 +38,7 @@ namespace RagnaroksWrath.Tests
             BiomeStateTests();
             StormAreaTests();
             StormLookTests();
+            ConfigLedgerTests();
             WindStateTests();
             FireScorchTests();
             PlagueTests();
@@ -514,6 +515,168 @@ namespace RagnaroksWrath.Tests
             Check("a NaN that reaches the drift math is neutralised, not propagated",
                 !float.IsNaN(BiomeDrift.Apply(
                     new ZoneState { Plague = float.NaN }, Hour, 0.02f, 0f, 0f, 1f).Plague));
+        }
+
+        // ---- ConfigLedger -----------------------------------------------------------
+
+        private static void ConfigLedgerTests()
+        {
+            Console.WriteLine("\nConfigLedger");
+
+            // ParseIni against what BepInEx actually writes: a header banner in ## comments,
+            // sections whose names contain spaces and digits, blank lines, and descriptions as
+            // # comments above each key.
+            var lines = new[]
+            {
+                "## Settings file was created by plugin Ragnarok's Wrath v0.27.0",
+                "## Plugin GUID: com.raveniron.ragnarokswrath",
+                "",
+                "[6 - Weather]",
+                "",
+                "# Setting type: Boolean",
+                "# Default value: false",
+                "StormsForceWeather = true",
+                "",
+                "StormForcedEnvironment = ThunderStorm",
+                "",
+                "[1 - Core]",
+                "TickBudgetMs = 2",
+            };
+            var snap = ConfigLedger.ParseIni(lines);
+
+            Check("a section with spaces and digits parses",
+                snap[ConfigLedger.Slot("6 - Weather", "StormsForceWeather")] == "true");
+            Check("a key after a blank line and comments still parses",
+                snap[ConfigLedger.Slot("6 - Weather", "StormForcedEnvironment")] == "ThunderStorm");
+            Check("a later section does not swallow an earlier one",
+                snap[ConfigLedger.Slot("1 - Core", "TickBudgetMs")] == "2");
+            Check("## banner lines are not mistaken for keys",
+                !snap.ContainsKey(ConfigLedger.Slot("", "## Settings file was created by plugin Ragnarok's Wrath v0")));
+            Check("keys are matched ignoring case, as BepInEx writes them",
+                snap.ContainsKey(ConfigLedger.Slot("6 - WEATHER", "stormsforceweather")));
+            Check("parsing null never throws", ConfigLedger.ParseIni(null).Count == 0);
+
+            // A value may itself contain '=' - only the FIRST one separates.
+            var eq = ConfigLedger.ParseIni(new[] { "[S]", "K = a=b=c" });
+            Check("only the first = separates key from value", eq[ConfigLedger.Slot("S", "K")] == "a=b=c");
+
+            // Version stamp.
+            Check("an unstamped file reads as version 0", ConfigLedger.ReadVersion(snap) == 0);
+            Check("a null snapshot reads as version 0", ConfigLedger.ReadVersion(null) == 0);
+            Check("garbage in the version stamp reads as 0, not as a crash",
+                ConfigLedger.ReadVersion(ConfigLedger.ParseIni(new[] { "[Meta]", "ConfigVersion = banana" })) == 0);
+            Check("a stamped file reads its version",
+                ConfigLedger.ReadVersion(ConfigLedger.ParseIni(new[] { "[Meta]", "ConfigVersion = 1" })) == 1);
+
+            // THE MIGRATION ITSELF. An existing pre-version file must come out behaving exactly as
+            // it did: StormDryChance backfilled to 0, so every storm keeps the single sky it had.
+            var planned = ConfigLedger.Plan(snap, 0);
+            Check("an unstamped file plans the storm backfill", planned.Backfilled.Count == 1);
+            Check("the backfill names the right key",
+                planned.Backfilled[0].Slot == ConfigLedger.Slot("6 - Weather", "StormDryChance"));
+            Check("the backfill preserves old behaviour with 0, not the shipped 0.5",
+                planned.Backfilled[0].Value == "0");
+            Check("the plan reports where it came from and where it goes",
+                planned.FromVersion == 0 && planned.ToVersion == ConfigLedger.CurrentVersion);
+
+            // A FRESH INSTALL MUST NOT BE MIGRATED. This is the case that decides whether new
+            // worlds get the new feature at all: plan anything here and the shipped default is
+            // dead on arrival for everyone.
+            Check("a fresh install (no file, empty snapshot) plans nothing",
+                ConfigLedger.Plan(new Dictionary<string, string>(), 0).IsEmpty);
+            Check("a null snapshot plans nothing", ConfigLedger.Plan(null, 0).IsEmpty);
+
+            // An already-migrated file must not be migrated twice - the second pass would stamp
+            // over an admin's own later edit of the same key.
+            Check("a file already at the current version plans nothing",
+                ConfigLedger.Plan(snap, ConfigLedger.CurrentVersion).IsEmpty);
+            Check("a file from the future plans nothing",
+                ConfigLedger.Plan(snap, ConfigLedger.CurrentVersion + 5).IsEmpty);
+
+            // THE SAFETY OF A BACKFILL: present means untouched. An admin who already set the key
+            // (or a half-finished earlier run that wrote it) must never be overwritten.
+            var already = ConfigLedger.ParseIni(new[]
+            {
+                "[6 - Weather]",
+                "StormDryChance = 0.8",
+            });
+            Check("a key the file already has is never backfilled over",
+                ConfigLedger.Plan(already, 0).Backfilled.Count == 0);
+
+            // Describe is what the owner reads; it must say the key, the value and the reason.
+            string described = ConfigLedger.Describe(planned);
+            Check("the boot line names the key it changed", described.Contains("StormDryChance"));
+            Check("the boot line names the value it wrote", described.Contains("0"));
+            Check("the boot line names both versions",
+                described.Contains("version 0") && described.Contains("-> " + ConfigLedger.CurrentVersion));
+            Check("an empty plan describes itself as nothing to migrate",
+                ConfigLedger.Describe(ConfigLedger.Plan(null, 0)).Contains("nothing to migrate"));
+            Check("describing a null plan never throws",
+                ConfigLedger.Describe(null).Contains("nothing to migrate"));
+
+            ConfigMigrationEndToEndTests();
+        }
+
+        /// <summary>
+        /// The plan being right is not the same as the plan being APPLIED, and the join between
+        /// them is a pair of bare strings: ConfigLedger names "6 - Weather"/"StormDryChance" and
+        /// ModConfig binds them from its own separate literals. Mistype either and Finish looks up
+        /// a key that does not exist, logs one warning, stamps the version anyway — and the
+        /// migration never runs again on that file, because it now reads as current. Silent, and
+        /// permanent. Nothing but an end-to-end bind catches it.
+        /// </summary>
+        private static void ConfigMigrationEndToEndTests()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "rw_cfgmig_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                // A pre-migration file, as 0.27.0 would have written it: no Meta section, no
+                // StormDryChance, and an owner who had turned the storm look on.
+                string path = Path.Combine(dir, "com.raveniron.ragnarokswrath.cfg");
+                File.WriteAllLines(path, new[]
+                {
+                    "## Settings file was created by plugin Ragnarok's Wrath v0.27.0",
+                    "",
+                    "[6 - Weather]",
+                    "StormsForceWeather = true",
+                    "StormForcedEnvironment = ThunderStorm",
+                });
+
+                var upgraded = new ConfigFile { ConfigFilePath = path };
+                ModConfig.Bind(upgraded);
+
+                Check("an upgraded config keeps its storms single-sky (StormDryChance backfilled to 0)",
+                    Math.Abs(ModConfig.StormDryChance.Value - 0f) < 0.0001f);
+                Check("an upgraded config is stamped at the current version",
+                    ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
+                Check("the owner's own value is left alone by the migration",
+                    ModConfig.StormsForceWeather.Value);
+                Check("the migration saved the file it changed", upgraded.SaveCount > 0);
+                Check("a backup of the pre-migration config was written beside it",
+                    File.Exists(path + ".v0.bak"));
+
+                // Running again over the now-stamped file must be a no-op, not a second migration:
+                // an admin who raises StormDryChance after upgrading must keep their value.
+                var second = new ConfigFile { ConfigFilePath = path };
+                ModConfig.Bind(second);
+                Check("a second boot does not migrate an already-stamped file again",
+                    ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
+
+                // A FRESH INSTALL must get the shipped default instead, or the feature ships dead.
+                var fresh = new ConfigFile { ConfigFilePath = Path.Combine(dir, "does_not_exist.cfg") };
+                ModConfig.Bind(fresh);
+                Check("a fresh install gets the shipped StormDryChance, not the legacy value",
+                    Math.Abs(ModConfig.StormDryChance.Value - 0.5f) < 0.0001f);
+                Check("a fresh install is stamped too, so it never migrates later",
+                    ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
+            }
+            finally
+            {
+                // Leave the harness's static config the way every other test expects to find it.
+                ModConfig.Bind(new ConfigFile());
+                try { Directory.Delete(dir, true); } catch { }
+            }
         }
 
         // ---- StormLook --------------------------------------------------------------
