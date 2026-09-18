@@ -208,7 +208,16 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         {
             if (!ModConfig.StormLightningEnabled.Value) return;
             if (!WeatherSystem.StormActive) return;
-            if (EnvMan.IsWet()) return;   // public static, decompile-verified 2026-08-27
+
+            // The ROLLED look, not the engine's weather. A forced sky reaches clients only, so
+            // a dedicated server's EnvMan reports a sky nobody is standing in — see
+            // LightningStrike.SkyAllows for the live failure this replaces. IsWet is short-
+            // circuited away when a sky is forced, so it is not called at all in that case.
+            bool forcedSky = ModConfig.StormsForceWeather.Value;
+            if (!LightningStrike.SkyAllows(
+                    forcedSky, WeatherSystem.StormIsDry,
+                    !forcedSky && EnvMan.IsWet()))   // IsWet: public static, decompile-verified 2026-08-27
+                return;
 
             float chance = LightningStrike.ChancePerTick(
                 IntervalSeconds, ModConfig.LightningMeanMinutes.Value);

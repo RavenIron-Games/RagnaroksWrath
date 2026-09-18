@@ -15,6 +15,32 @@ namespace RavenIron.RagnaroksWrath.Core
     /// </summary>
     public static class LightningStrike
     {
+        /// <summary>
+        /// Whether the SKY permits a bolt — the one gate that cannot be answered by asking
+        /// the engine what the weather is.
+        ///
+        /// A storm's look is a vanilla event's `m_forceEnvironment`, and vanilla applies that
+        /// override PER MACHINE, through a path a dedicated server never walks: with no local
+        /// player there is nothing to put inside the event area, so the server keeps reporting
+        /// its OWN unforced weather. `EnvMan.IsWet()` on a headless authority therefore
+        /// describes a sky nobody is looking at, uncorrelated with the storm every player can
+        /// see. Asking it there let a bolt land under a forced `ThunderStorm` one log line
+        /// after the mod announced that rain suppresses lightning — observed live on a
+        /// dedicated server 2026-09-18, in both of that session's wet storms, while the
+        /// connected client showed the vanilla `Wet` status and visible rainfall.
+        ///
+        /// So when the sky is forced, the ROLLED LOOK is the only honest answer — and it is
+        /// right on the authority by construction, because the authority is what rolled it.
+        /// When no sky is forced the storm imposes nothing, the world's real weather is the
+        /// truth, and this behaves exactly as it always did.
+        /// </summary>
+        /// <param name="forcedSky">StormsForceWeather: the storm imposes an environment on clients.</param>
+        /// <param name="stormIsDry">The look this storm rolled, read from the live event's name.</param>
+        /// <param name="envIsWet">EnvMan.IsWet() as THIS machine sees it. Consulted only when
+        /// no sky is forced, because only then does it describe the storm anyone is standing in.</param>
+        public static bool SkyAllows(bool forcedSky, bool stormIsDry, bool envIsWet)
+            => forcedSky ? stormIsDry : !envIsWet;
+
         /// <summary>Per-tick chance of one strike, from the configured mean minutes
         /// between strikes while a storm holds at least one player. Garbage disables
         /// rather than floods — the PlagueGenesis contract, same shape on purpose.</summary>

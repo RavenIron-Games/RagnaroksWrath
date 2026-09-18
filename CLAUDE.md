@@ -291,6 +291,22 @@ overlap if it is ever installed alongside.
   to BepInEx members. It very much still applies to the publicized Valheim assemblies.
 
 
+- **Valheim 1.0.15 (live 2026-09-18) needed NOTHING, and that is worth writing down.** Found by
+  reading a client's console banner mid-session — `Valheim 1.0.15 (network version 40)` — not by
+  anyone noticing an update. The full drill was run the same hour: all **93 apiprobe surfaces
+  resolve**, and revprobe says every already-BUILT and already-SHIPPED binary for all seven mods
+  (RW, FireFront, Undertow, Cairn, RavenEye, ValkyriesCargo, TheRavensCall) **binds clean**.
+  Network version stayed **40**, so 1.0.12 and 1.0.15 interoperate — unlike the 1.0.7 → 1.0.12
+  step. Save formats did not move: `Version.Player` **46**, `Version.World` **41**, read out of
+  the live 1.0.15 binary. Every member this project reaches for is unchanged, including the ones
+  1.0.7 moved (`ZoneSystem.s_instance`, the `ConsoleCommand` ctor, `FileHelpers.FileSource`
+  values, the 6-parameter RPC caps, `SaveSystem.GetWorldsSaveRootPath`). **Record the null result,
+  because a release that needed no change is the one nobody re-checks** — which is exactly how
+  Undertow 0.5.1 and RavenEye 0.1.0 stayed broken on Hexium for two days after 1.0.7.
+  One amendment to the entry below: at 1.0.15 the owner publicized into the IN-GAME
+  `valheim_Data\Managed\publicized_assemblies` folder, so for once that folder is the CURRENT set
+  rather than the stale trap it was at 1.0.7. Do not learn "the in-game folder is stale" as a
+  rule — learn "let `fetch-libs.ps1`'s per-file staleness guard decide", which is what it is for.
 - **Valheim 1.0.12 (2026-09-11) bumped the NETWORK VERSION, 39 → 40.** Two days after 1.0.7, and the
   only thing in it that matters to anyone here. `ZNet.RPC_PeerInfo` refuses outright any peer whose
   number differs, so a 1.0.12 client cannot join a 1.0.7 server or the reverse — everyone updates
@@ -379,6 +395,24 @@ overlap if it is ever installed alongside.
 
 ## Current state
 
+**Built and VERIFIED IN-GAME (2026-09-18, 0.27.2, dedicated server Storm10 on Valheim 1.0.15):
+two-sky storms, AND the rain gate they hang off — which turned out to have never worked on a
+dedicated server.** Two phases, one config key apart, same binary:
+`StormDryChance 0` gave **4 wet storms and 0 bolts** (one of them a storm RESUMED across a
+restart, which also proves liveness re-derives the look from the live event's name);
+`StormDryChance 1` gave a bolt on the **first** dry storm, into a tree, spreading to ground fire
+and banked as scorch. The second phase is the control that matters: four silent wet storms look
+identical to a `FireSystem` that never ran, and only the dry storm striking immediately tells
+those apart. Under the pre-fix gate, four clean wet storms was a ~0.16% outcome.
+The owner confirmed the client half by eye and, for the first time here, by `devcommands` then
+`env`, which prints `Environment: EnvSetup: ThunderStorm.` / `Eikthyr.` — an authoritative
+client-side read of the storm sky. Vanilla's own `env` is `onlyServer:true, isCheat:true` and is
+useless to a joined client; ServerDevcommands' override is what makes this work, and only for a
+player on the adminlist. **The instrument lesson: the old `storm began` line said `sky is
+'Clear'` while every client stood in a thunderstorm, and that is why the 2026-08-27 "verification"
+passed. It now names whose sky the value is.** See the storm-lightning entry above for the
+mechanism and `LightningStrike.SkyAllows` for the fix.
+
 **Built and VERIFIED IN-GAME (2026-09-03, 0.26.0, on a CLONED server install with the full
 Ravenrest modpack and Seasonality 3.8.0 live): storms anchor in the wild.** The owner stood
 inside their base with the storm overdue: no event, no banner, and the verbose
@@ -420,8 +454,23 @@ construction), the homestead standoff refusing a real bolt by log line, Centre l
 the Eikthyr storm look confirmed by the owner's eyes. FireFront became a listed store
 manifest dependency the same day (packaging only — the code stays soft-dependent).
 Key operational fact: a WET forced storm look (`ThunderStorm`, the default) suppresses
-lightning via the rain gate; `Eikthyr` is the dry storm that allows both. See backlog
-task 15.
+lightning; `Eikthyr` is the dry storm that allows both. See backlog task 15.
+**CORRECTED 2026-09-18 (0.27.2): this used to say "via the rain gate", and that mechanism was
+never real on a dedicated server.** `EnvMan.IsWet()` cannot see a forced sky there — vanilla
+resolves the override only via `RandEventSystem.GetEnvOverride()`, whose `m_activeEvent` is set
+behind a `(bool)Player.m_localPlayer` gate — and cannot see natural weather either, because
+`EnvMan.UpdateEnvironment`'s biome roll returns early when `Utils.GetMainCamera()` is null. Both
+gates are permanently true headless, so `IsWet()` is FROZEN at `Awake`'s default `EnvSetup` for
+the process lifetime. The 2026-08-27 run that "verified" this most likely watched that frozen
+default happen to agree with the roll. Caught live on Storm10 on 2026-09-18 by a bolt landing
+one log line after the mod announced rain would suppress it, in both of that session's wet
+storms, while the client showed the vanilla `Wet` status. `FireSystem` now gates on
+`WeatherSystem.StormIsDry` whenever `StormsForceWeather` is on — see `LightningStrike.SkyAllows`
+— and consults `EnvMan.IsWet()` only when no sky is forced, where it is the honest answer. A
+listen host was never affected: it has a local player, so the override resolves and old and new
+agree. **FireFront was never affected either** — it already reads the authoritative
+`RandEventSystem.GetCurrentRandomEvent()`; an early reading of its `raining 0/0` heartbeat as a
+shared bug was wrong, that ratio is `wet/burning` and simply meant nothing was alight.
 
 **Built and verified in-game:** plugin loads, config binds, `WorldTick` drives systems,
 `SeasonSystem` resolves a real season from the world day (confirmed: logged `Summer` on an

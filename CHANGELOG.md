@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.27.2
+
+**On a dedicated server, a storm's rolled look decided nothing.** The wet storm was supposed to
+soak and only the dry one to burn — and on a dedicated server lightning ignored which one had
+rolled and struck at the full configured rate under both. Found live on 2026-09-18 by watching a
+bolt land one log line after the mod had announced that rain suppresses lightning, while the
+connected client showed the vanilla `Wet` status and visible rainfall.
+
+- **The rain gate was asking a machine that does not have weather.** `FireSystem` gated on
+  `EnvMan.IsWet()`, and on a headless dedicated server that value is not merely wrong, it is
+  frozen. Two independent local-player gates in vanilla see to it:
+  `RandEventSystem.GetEnvOverride()` reads `m_activeEvent`, which is only ever set on a branch
+  behind `(bool)Player.m_localPlayer`; and `EnvMan.UpdateEnvironment`'s biome-roll fallback
+  returns early when `Utils.GetMainCamera()` is null. Both are always true headless, so the
+  server never applies the forced sky AND never rolls its own weather either — `IsWet()` stays
+  at whatever `EnvSetup` `Awake` flagged as default for the whole process lifetime. That is why
+  the server logged `sky is 'Clear'` under a forced `ThunderStorm` all session and it read as
+  normal: it was not a stale value, it was the only value that machine will ever have.
+- **The fix gates on the rolled look.** New `LightningStrike.SkyAllows(forcedSky, stormIsDry,
+  envIsWet)`: with a sky forced, the rolled look is the answer, and it is right on the authority by
+  construction because the authority is what rolled it. With no sky forced the storm imposes
+  nothing, real weather decides, and behaviour is exactly as before. Seven tests pin it; two of
+  them fail against the old code.
+- **What was actually observed, and what was only possible.** Observed live, twice in two wet
+  storms: a WET-rolled storm drew a bolt, because the frozen default read as not-wet. The mirror
+  case — a DRY storm silently refusing to strike because that frozen default read as WET — was
+  NOT observed and cannot occur on a server whose default is dry; it is reachable on a listen
+  host, where `EnvMan` genuinely runs. Both directions are pinned by tests regardless, because
+  the gate should not be consulting that value at all when a sky is forced.
+- **The storm log line stopped reporting a sky it cannot see.** `storm began` said
+  `sky is 'Clear'` while every client was in a thunderstorm. It now names whose sky the value is:
+  with a forced look it reports what clients see AND says this machine's own sky is not the
+  storm's; with no forced look it says so plainly.
+- **FireFront is NOT affected, contrary to a first reading during the same session.** Its
+  heartbeat's `raining 0/0` was misread here as a failed rain check; `RainingBurnersForStatus()`
+  returns `wet + "/" + _burning.Count`, so `0/0` simply meant nothing was burning at that instant.
+  FireFront already resolves the event through `RandEventSystem.GetCurrentRandomEvent()` — the
+  server-authoritative `m_randomEvent`, not the local-player-gated `GetEnvOverride()` — and
+  carries its own replica of the weather roll that does not depend on `Utils.GetMainCamera()`.
+  It had this right before we did.
+
 ## 0.27.1
 
 **Six fixes to the config migration 0.27.0 shipped, one of which could have changed a live world

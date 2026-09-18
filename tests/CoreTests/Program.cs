@@ -2079,6 +2079,40 @@ namespace RagnaroksWrath.Tests
         {
             Console.WriteLine("\nLightningStrike");
 
+            // ---- the sky gate -------------------------------------------------------------
+            // THE REGRESSION. Until 2026-09-18 FireSystem asked `EnvMan.IsWet()` directly. A
+            // forced sky reaches CLIENTS only — vanilla's override path needs a local player,
+            // which a dedicated server does not have — so the server kept answering with its
+            // OWN unforced weather. Live result that day: a bolt landed under a forced
+            // ThunderStorm one log line after the mod announced rain suppresses lightning,
+            // in BOTH of that session's wet storms, while the connected client showed the
+            // vanilla `Wet` status and visible rain. This first case is that exact scenario
+            // and it fails against the old `if (EnvMan.IsWet()) return;`.
+            Check("a forced WET sky refuses a bolt even when this machine sees no rain",
+                !LightningStrike.SkyAllows(forcedSky: true, stormIsDry: false, envIsWet: false));
+            Check("a forced DRY sky allows a bolt",
+                LightningStrike.SkyAllows(forcedSky: true, stormIsDry: true, envIsWet: false));
+
+            // With a sky forced, the engine's own weather is not the storm anyone is standing
+            // in, so it must not get a vote in EITHER direction. The second of these is the
+            // silent half of the same bug: a dry storm that never strikes because the SERVER
+            // happened to be rained on looks exactly like lightning simply not rolling.
+            Check("a forced WET sky still refuses when this machine also sees rain",
+                !LightningStrike.SkyAllows(forcedSky: true, stormIsDry: false, envIsWet: true));
+            Check("a forced DRY sky still allows when this machine's own sky is wet",
+                LightningStrike.SkyAllows(forcedSky: true, stormIsDry: true, envIsWet: true));
+
+            // No forced sky: the storm imposes nothing, the world's real weather is the truth,
+            // and the rolled look changes nothing anyone can see. Unchanged behaviour, pinned
+            // so the fix above cannot quietly take the vote away from real rain.
+            Check("with no forced sky, real rain refuses a bolt",
+                !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: true, envIsWet: true));
+            Check("with no forced sky, dry weather allows a bolt",
+                LightningStrike.SkyAllows(forcedSky: false, stormIsDry: true, envIsWet: false));
+            Check("with no forced sky, the rolled look does not decide — real rain does",
+                !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, envIsWet: true) &&
+                 LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, envIsWet: false));
+
             // 10s tick, 15min mean: chance = 10 / 900.
             Check("the per-tick chance matches the configured mean",
                 Math.Abs(LightningStrike.ChancePerTick(10f, 15f) - 10f / 900f) < 1e-9f);

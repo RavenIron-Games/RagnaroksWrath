@@ -43,8 +43,10 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
         /// <summary>
         /// The dry storm's event, added 2026-09-18. A storm now rolls one of two looks per
-        /// episode and the look has teeth: rain suppresses lightning (FireSystem honours
-        /// `EnvMan.IsWet()` up front), so the wet storm soaks and the dry one can burn.
+        /// episode and the look has teeth: the wet one soaks and only the dry one can burn.
+        /// FireSystem gates on the ROLLED look — <see cref="StormIsDry"/> — and NOT on
+        /// `EnvMan.IsWet()`, because a forced sky never reaches a dedicated server and the
+        /// engine's weather there is not the storm's. See `LightningStrike.SkyAllows`.
         /// </summary>
         public const string StormDryEventName = StormLook.DryEventName;
 
@@ -141,9 +143,18 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 Vector3 probe = StormCentre;
                 float wind = WindMultiplierAt(probe);
 
+                // Whose sky is this? On a dedicated server CurrentEnvironment is the SERVER'S
+                // own weather, which a forced storm never overrides — reading it as "the
+                // storm's sky" is what made 'Clear' look normal under a ThunderStorm all
+                // through the 2026-09-18 session. Name the owner of the value, always.
+                string skyText = ModConfig.StormsForceWeather.Value
+                    ? $"clients see '{(StormIsDry ? ModConfig.StormDryEnvironment.Value : ModConfig.StormForcedEnvironment.Value)}'" +
+                      $", this machine's own sky is '{CurrentEnvironment}' and is NOT the storm's"
+                    : $"sky is '{CurrentEnvironment}' (no sky forced, so this IS the storm's)";
+
                 RagnaroksWrath.Log.LogInfo(
                     $"[{Name}] storm {(StormActive ? "began" : "ended")} - {(StormIsDry ? "DRY" : "wet")} " +
-                    $"look, sky is '{CurrentEnvironment}' " +
+                    $"look, {skyText} " +
                     $"(forceWeather={ModConfig.StormsForceWeather.Value}); at the centre: " +
                     $"plagueSpread x{PlagueSpreadMultiplierAt(probe):F2} (live). " +
                     $"Reserved, consumed by nothing yet: fireRisk x{FireRiskMultiplierAt(probe):F2}, " +
