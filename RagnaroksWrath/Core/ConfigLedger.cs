@@ -76,7 +76,13 @@ namespace RavenIron.RagnaroksWrath.Core
         /// where it never did (a ThunderStorm owner) or stops striking half the time where it
         /// always did (an Eikthyr owner). BOTH directions are a silent change to a live world, so
         /// an existing file gets 0: every storm keeps using the one sky it already used, whichever
-        /// that was. One rule, provably behaviour-preserving for every prior configuration.
+        /// that was.
+        ///
+        /// That is only HALF the rung, and the other half is in <see cref="Plan"/> under
+        /// `version == 1`. A file whose sky was Eikthyr needs its VALUES MOVED as well, because
+        /// `StormForcedEnvironment` now means the wet storm specifically and Eikthyr is the dry
+        /// one — see the comment there. This table handles every other file, where the stored sky
+        /// still means what the key says and only the new chance needs pinning to 0.
         /// </summary>
         private static readonly Dictionary<int, Backfill[]> Backfills = new Dictionary<int, Backfill[]>
         {
@@ -117,9 +123,28 @@ namespace RavenIron.RagnaroksWrath.Core
             public List<KeptSlot> Kept = new List<KeptSlot>();
             public List<BackfilledSlot> Backfilled = new List<BackfilledSlot>();
 
+            /// <summary>
+            /// Writes that land on keys ALREADY IN THE FILE, because the key's MEANING changed
+            /// under the owner rather than its value being wrong. Same shape as a backfill and
+            /// applied the same way, but deliberately a separate list: a backfill is safe
+            /// precisely because it only ever touches an absent key, and blurring the two would
+            /// quietly licence overwriting settings. Everything here is a MOVE — the value goes
+            /// somewhere it still means what the owner meant — and the boot line names both ends.
+            /// </summary>
+            public List<BackfilledSlot> Relocated = new List<BackfilledSlot>();
+
             /// <summary>True when the plan would change nothing on disk beyond the version stamp.</summary>
-            public bool IsEmpty => ResetToDefault.Count == 0 && Kept.Count == 0 && Backfilled.Count == 0;
+            public bool IsEmpty => ResetToDefault.Count == 0 && Kept.Count == 0 &&
+                                   Backfilled.Count == 0 && Relocated.Count == 0;
         }
+
+        // The shipped defaults of the two storm skies. They live here as well as in ModConfig
+        // because this file must reason about them without depending on the config layer, and a
+        // test pins the two copies together so they cannot drift.
+        public const string WetEnvironmentDefault = "ThunderStorm";
+        public const string DryEnvironmentDefault = "Eikthyr";
+
+        private const string WeatherSection = "6 - Weather";
 
         public static string Slot(string section, string key) => section + "::" + key;
 
@@ -259,6 +284,69 @@ namespace RavenIron.RagnaroksWrath.Core
                     }
                 }
 
+                // VERSION 1'S SEMANTIC HALF, and it exists because the live run on Storm10
+                // (2026-09-18) showed the plain backfill preserving BEHAVIOUR but not MEANING.
+                //
+                // Before this version `StormForcedEnvironment` was the only sky a storm could
+                // wear. After it, that key means specifically THE WET ONE, and `StormDryEnvironment`
+                // holds the dry one. An owner who had set it to Eikthyr — the dry sky, chosen
+                // deliberately because it is the one that lets lightning through — ends up with
+                // their value sitting in the slot labelled wet. Behaviour stayed right, since
+                // StormDryChance 0 means the wet slot is always used and it still held Eikthyr.
+                // But the boot line then read "wet 'Eikthyr' or dry 'Eikthyr'", which is
+                // self-contradictory, and the moment they raised StormDryChance hoping for variety
+                // they would get Eikthyr either way and conclude the feature was broken.
+                //
+                // So when the stored sky IS the dry one, move it to the key that now means that,
+                // put the shipped wet default back in the key that now means WET, and set
+                // StormDryChance to 1. Every storm still rolls dry, still wears Eikthyr, still
+                // permits lightning — identical behaviour — and the two dials finally say what
+                // they do. Lowering StormDryChance then produces real variety instead of nothing.
+                //
+                // This is the ONE place this migration writes over a key the owner set, so it is
+                // gated hard: only that exact key, only when it holds exactly the dry default, and
+                // the value is moved rather than discarded.
+                if (version == 1)
+                {
+                    string forcedSlot = Slot(WeatherSection, "StormForcedEnvironment");
+                    string chanceSlot = Slot(WeatherSection, "StormDryChance");
+                    string drySlot = Slot(WeatherSection, "StormDryEnvironment");
+
+                    string storedSky;
+                    bool storedIsDrySky =
+                        snapshot.TryGetValue(forcedSlot, out storedSky) &&
+                        storedSky != null &&
+                        string.Equals(storedSky.Trim(), DryEnvironmentDefault, StringComparison.OrdinalIgnoreCase);
+
+                    // Never fight a file that already carries the new keys: that is either an
+                    // admin's own choice or an earlier run's, and neither is ours to overwrite.
+                    if (storedIsDrySky && !snapshot.ContainsKey(chanceSlot) && !snapshot.ContainsKey(drySlot))
+                    {
+                        decided.Add(forcedSlot);
+                        decided.Add(chanceSlot);
+                        decided.Add(drySlot);
+
+                        plan.Relocated.Add(new BackfilledSlot
+                        {
+                            Slot = drySlot,
+                            Value = storedSky.Trim(),
+                            Because = "the sky you chose was the DRY one, and this is the key that now means that",
+                        });
+                        plan.Relocated.Add(new BackfilledSlot
+                        {
+                            Slot = forcedSlot,
+                            Value = WetEnvironmentDefault,
+                            Because = "this key now means the WET storm only, so it goes back to the shipped default",
+                        });
+                        plan.Relocated.Add(new BackfilledSlot
+                        {
+                            Slot = chanceSlot,
+                            Value = "1",
+                            Because = "every storm still rolls dry, exactly as before; lower it for the new wet/dry mix",
+                        });
+                    }
+                }
+
                 if (backfills != null && backfills.TryGetValue(version, out var backfillSteps) && backfillSteps != null)
                 {
                     foreach (Backfill b in backfillSteps)
@@ -300,6 +388,11 @@ namespace RavenIron.RagnaroksWrath.Core
             if (plan.IsEmpty) return head + "nothing to migrate";
 
             var parts = new List<string>();
+
+            // Relocations first: they are the only entries that write over something the owner
+            // set, so they are the ones an owner most needs to see and be able to undo.
+            foreach (BackfilledSlot r in plan.Relocated)
+                parts.Add(r.Slot + " moved to " + r.Value + " (" + r.Because + ")");
 
             foreach (BackfilledSlot b in plan.Backfilled)
                 parts.Add(b.Slot + " set to " + b.Value + " (" + b.Because + ")");

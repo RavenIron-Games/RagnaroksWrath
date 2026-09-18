@@ -191,6 +191,19 @@ namespace RavenIron.RagnaroksWrath.Config
                 if (entry == null) { WarnUnknownSlot(b.Slot); continue; }
                 ApplyBackfill(entry, b);
             }
+
+            // Relocations LAST, and the order matters. A relocation writes over a key the owner
+            // set, so it must be the final word on that key — if a backfill and a relocation ever
+            // named the same slot, the plan is wrong, but applying relocations second means the
+            // file still ends up in the state the boot line just described rather than in a third
+            // state nobody announced. (The ledger's one-slot-one-decision guard should make that
+            // collision impossible; this is the belt to its braces.)
+            foreach (ConfigLedger.BackfilledSlot r in plan.Relocated)
+            {
+                ConfigEntryBase entry = Lookup(cfg, r.Slot);
+                if (entry == null) { WarnUnknownSlot(r.Slot); continue; }
+                ApplyBackfill(entry, r);
+            }
         }
 
         /// <summary>

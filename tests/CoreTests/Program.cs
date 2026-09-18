@@ -662,6 +662,74 @@ namespace RagnaroksWrath.Tests
             Check("a key the file already has is never backfilled over",
                 ConfigLedger.Plan(already, 0).Backfilled.Count == 0);
 
+            // THE RELOCATION RUNG, added after the live Storm10 run on 2026-09-18 showed the plain
+            // backfill preserving BEHAVIOUR but not MEANING. An owner who had set the only sky
+            // there was to Eikthyr — the DRY one — ended up with that value sitting in the key
+            // that now means specifically the WET one, and the mod's own boot line read
+            // "wet 'Eikthyr' or dry 'Eikthyr'".
+            string Val(ConfigLedger.MigrationPlan p, string key)
+            {
+                foreach (var r in p.Relocated)
+                    if (r.Slot == ConfigLedger.Slot("6 - Weather", key)) return r.Value;
+                return null;
+            }
+
+            var eikthyrOwner = ConfigLedger.ParseIni(new[]
+            {
+                "[6 - Weather]",
+                "StormsForceWeather = true",
+                "StormForcedEnvironment = Eikthyr",
+            });
+            var moved = ConfigLedger.Plan(eikthyrOwner, 0);
+
+            Check("an Eikthyr owner's sky moves to the key that now means dry",
+                Val(moved, "StormDryEnvironment") == "Eikthyr");
+            Check("the wet key goes back to the shipped wet default",
+                Val(moved, "StormForcedEnvironment") == ConfigLedger.WetEnvironmentDefault);
+            Check("every storm still rolls dry, so behaviour is unchanged",
+                Val(moved, "StormDryChance") == "1");
+            Check("the relocation replaces the plain backfill rather than fighting it",
+                moved.Backfilled.Count == 0);
+            Check("a relocation is not reported as a backfill", moved.Relocated.Count == 3);
+
+            // Case matters in a config file that humans type into.
+            var lowerCase = ConfigLedger.ParseIni(new[] { "[6 - Weather]", "StormForcedEnvironment = eikthyr" });
+            Check("the dry sky is recognised whatever case it was typed in",
+                ConfigLedger.Plan(lowerCase, 0).Relocated.Count == 3);
+
+            // A ThunderStorm owner, or anyone on a custom sky, keeps the simple path: their value
+            // already means what the key says, so only the new chance needs pinning.
+            var custom = ConfigLedger.ParseIni(new[] { "[6 - Weather]", "StormForcedEnvironment = Mistlands_clear" });
+            var customPlan = ConfigLedger.Plan(custom, 0);
+            Check("a custom sky is never relocated", customPlan.Relocated.Count == 0);
+            Check("a custom sky still gets the chance pinned to 0", customPlan.Backfilled.Count == 1);
+
+            // THE ONE PLACE THIS MIGRATION WRITES OVER A KEY THE OWNER SET, so the guard on it
+            // matters more than the feature: a file already carrying either new key is somebody's
+            // own choice, or an earlier run's, and is never second-guessed.
+            var halfDone = ConfigLedger.ParseIni(new[]
+            {
+                "[6 - Weather]",
+                "StormForcedEnvironment = Eikthyr",
+                "StormDryChance = 0.25",
+            });
+            Check("a file that already has StormDryChance is never relocated",
+                ConfigLedger.Plan(halfDone, 0).Relocated.Count == 0);
+            var halfDone2 = ConfigLedger.ParseIni(new[]
+            {
+                "[6 - Weather]",
+                "StormForcedEnvironment = Eikthyr",
+                "StormDryEnvironment = ThunderStorm",
+            });
+            Check("a file that already has StormDryEnvironment is never relocated",
+                ConfigLedger.Plan(halfDone2, 0).Relocated.Count == 0);
+
+            string movedLine = ConfigLedger.Describe(moved);
+            Check("the boot line says a value MOVED, not merely that it was set",
+                movedLine.Contains("moved to"));
+            Check("the boot line names both ends of the move",
+                movedLine.Contains("StormDryEnvironment") && movedLine.Contains("StormForcedEnvironment"));
+
             // Describe is what the owner reads; it must say the key, the value and the reason.
             string described = ConfigLedger.Describe(planned);
             Check("the boot line names the key it changed", described.Contains("StormDryChance"));
@@ -772,6 +840,35 @@ namespace RagnaroksWrath.Tests
                     Math.Abs(ModConfig.StormDryChance.Value - 0.5f) < 0.0001f);
                 Check("a fresh install is stamped too, so it never migrates later",
                     ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
+
+                // ConfigLedger keeps its own copy of the two sky names so Core need not depend on
+                // Config. Two copies of a string drift; this is the pin that stops them.
+                Check("the ledger's wet default matches the one ModConfig actually ships",
+                    (string)ModConfig.StormForcedEnvironment.DefaultValue == ConfigLedger.WetEnvironmentDefault);
+                Check("the ledger's dry default matches the one ModConfig actually ships",
+                    (string)ModConfig.StormDryEnvironment.DefaultValue == ConfigLedger.DryEnvironmentDefault);
+
+                // THE STORM10 CASE, end to end: the real config that exposed this, migrated by the
+                // shipping ModConfig rather than described. Behaviour must be identical — every
+                // storm dry and wearing Eikthyr — while the keys finally say what they mean.
+                string eikPath = Path.Combine(dir, "eikthyr.cfg");
+                File.WriteAllLines(eikPath, new[]
+                {
+                    "[6 - Weather]",
+                    "StormsForceWeather = true",
+                    "StormForcedEnvironment = Eikthyr",
+                });
+                var eik = new ConfigFile { ConfigFilePath = eikPath };
+                ModConfig.Bind(eik);
+
+                Check("Storm10's owner keeps an all-dry storm after migrating",
+                    Math.Abs(ModConfig.StormDryChance.Value - 1f) < 0.0001f);
+                Check("and the sky they actually see is still Eikthyr",
+                    ModConfig.StormDryEnvironment.Value == "Eikthyr");
+                Check("while the wet key finally holds a wet sky",
+                    ModConfig.StormForcedEnvironment.Value == ConfigLedger.WetEnvironmentDefault);
+                Check("their own StormsForceWeather is still untouched",
+                    ModConfig.StormsForceWeather.Value);
 
                 // ---- THE STAMP ONLY GOES UP (fixed 2026-09-18). A file written by a NEWER build
                 //      has already had rungs this build knows nothing about. An unconditional
