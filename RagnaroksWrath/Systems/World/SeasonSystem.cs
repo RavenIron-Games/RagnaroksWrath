@@ -73,7 +73,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
         public string Name => "SeasonSystem";
         public bool Enabled => ModConfig.EnableSeason.Value;
-        public float IntervalSeconds => 10f;
+        public float IntervalSeconds => ModConfig.SeasonIntervalSeconds.Value;
 
         /// <summary>Current season. Safe to read from any system; never null-state.</summary>
         public static Season Current { get; private set; } = Season.Spring;
@@ -453,7 +453,6 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             }
         }
 
-        /// <summary>Multiplier on farming yield and crop growth.</summary>
         /// <summary>
         /// How fast cold accumulates. Consumed by BiomeStateSystem's Frost drift, and the reason
         /// that field can build with no event behind it. Kept here with the other three so there
@@ -471,8 +470,8 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             }
         }
 
+        /// <summary>Multiplier on farming yield and crop growth.</summary>
         public static float FarmingYieldMultiplier()
-
         {
             switch (Current)
             {

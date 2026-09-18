@@ -7,9 +7,20 @@ using RavenIron.RagnaroksWrath.Core;
 namespace RavenIron.RagnaroksWrath.Systems.World
 {
     /// <summary>
-    /// The world keeps score — task 13, PHASE A ONLY: the influence ledger and its
-    /// attribution writers. No grudges, no contests, no spawn war yet; those phases read
-    /// what this one records, and each lands separately per the spec.
+    /// The world keeps score — task 13. ALL FIVE PHASES ARE BUILT and live in this file and
+    /// its neighbours; phase A below is the ledger everything else reads from.
+    ///
+    /// (This comment said "PHASE A ONLY: no grudges, no contests, no spawn war yet" until
+    /// 2026-09-18, three weeks after phases B through E shipped — while `---- phase C: the
+    /// contest ----` and `---- phase D: the spawn war ----` sat a few dozen lines below it in
+    /// this same file. Corrected rather than deleted, because a doc comment that contradicts
+    /// the code it sits on top of is worth remembering as a failure mode: it is believed
+    /// instantly and checked never.)
+    ///
+    /// Where each phase lives: A here (the writers below), B the grudge — consumed by
+    /// BiomeStateSystem and surfaced through TitleSync and ZoneSync, C the contest at the
+    /// `phase C` banner below, D the spawn war at the `phase D` banner, E the nemesis in
+    /// `Patches\Patch_Nemesis.cs`.
     ///
     /// What books in phase A:
     ///
@@ -105,13 +116,20 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < _cropPrefabs.Length; i++) _cropPrefabs[i] = _cropPrefabs[i].Trim();
 
+            // This line ended with "ARSON DORMANT: harm attribution waits for a FireFront igniter
+            // surface" until 2026-09-18 — false since 0.11.1, when FireFront 0.17.3 shipped that
+            // surface and FireSystem began booking harm through RivalryLedger.AddHarm. Every
+            // server owner was told at every boot that a working feature was off, while
+            // FireSystem's own boot line a moment later reported the truth. Arson's real state
+            // depends on which FireFront is installed, so it is FireSystem's to report and this
+            // line now points at it rather than keeping a second, staler copy of the answer.
             RagnaroksWrath.Log.LogInfo(
-                $"[{Name}] phase A — the influence ledger. Writers armed: tending " +
+                $"[{Name}] the influence ledger, all phases. Writers armed: tending " +
                 $"({ModConfig.TendingCarePerPlant.Value:F3} care/plant, watermarked), healing presence " +
-                $"({ModConfig.CarePerHealedPoint.Value:F2} care/healed point, split by ring). " +
-                $"Both columns fade, half-life {ModConfig.RivalryHalfLifeHours.Value:F0}h. " +
-                "ARSON DORMANT: harm attribution waits for a FireFront igniter surface rather " +
-                "than framing bystanders by presence.");
+                $"({ModConfig.CarePerHealedPoint.Value:F2} care/healed point, split by ring), and arson " +
+                $"({ModConfig.ArsonHarmPerScorchPoint.Value:F2} harm/scorch point) — see FireSystem's " +
+                "own line for whether the installed FireFront exposes the igniter it needs. " +
+                $"Both columns fade, half-life {ModConfig.RivalryHalfLifeHours.Value:F0}h.");
         }
 
         public void Tick(float deltaSeconds)

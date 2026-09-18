@@ -1238,7 +1238,41 @@ the same day on a cloned install (see task 16).
   try; (2) "no `Remote admin` audit line in the server's BepInEx log" proved nothing,
   because the minimal server install captures ZERO Unity/ZLog lines — vanilla audit
   output exists only in the console window. Check the window, not the file.
-- **Shelter and storms.** Do Devastating Storm effects respect vanilla's `InShelter()`
-  suppression?
-- **Per-system config surface.** Master toggles exist; per-system tuning knobs are not
-  designed beyond `SeasonLengthDays`.
+- **Shelter and storms. ANSWERED 2026-09-18 — no, and they should not.** Decompiled
+  `Player.InShelter()`: its whole body is `m_coverPercentage >= 0.8f ? m_underRoof : false`,
+  fed once a second by `Player.UpdateCover` → `Cover.GetCoverForPoint` (17 raycasts plus a
+  straight-up spherecast). Two facts settle the question. **First, what vanilla uses it for:**
+  only `Player.UpdateEnvStatusEffects` reads it, where it gates Wet, suppresses Cold and
+  Freezing, drives the Shelter buff, permits Resting, and feeds `m_safeInHome`. Nothing else.
+  `RandEventSystem` — vanilla's own home for events like our storm — contains **zero**
+  references to `InShelter` or `Cover`. Shelter, in vanilla's vocabulary, is a comfort gate,
+  not a hazard gate, and extending it to fire would push the concept past where the game
+  itself takes it. **Second, where it runs:** `UpdateCover` sits in `Player.FixedUpdate`
+  behind `if (!m_nview.IsOwner()) return;` and `m_localPlayer == this`, so it executes only
+  on the machine owning that character, and the result is never networked. A dedicated
+  server owns no player characters and therefore *cannot* ask. In this repo `InShelter()` is
+  called only from `Client\HealthEffects.cs` and `Visuals\`, never from `Systems\` or `Net\`.
+  Six of the storm's seven effects are zone- or world-scoped anyway (plague spread, world
+  burden, contest escalation, plus the two reserved multipliers and the Stormrider title), and
+  a zone should no more stop rotting because one player stepped indoors than burnt ground
+  should un-scorch. `Visuals\PlagueFog.cs` already draws exactly this line in its own comment:
+  the fog hides indoors, the plague value does not.
+  **The one real gap, accepted deliberately:** storm lightning is positional and
+  world-mutating, and `LightningStandoffMeters` / `Homestead.IsNearPlayerBuilt` protects only
+  player-BUILT pieces near the strike. A player sheltering under natural rock or cliff gets
+  nothing. Narrow, and closing it would mean networking vanilla's shelter bit for the first
+  time — piggyback it on HealthSync's cadence and have `TryLightning` reroll an anchor whose
+  bit is set. New cross-machine state, not a quick fix. Documentation-only resolution; no code
+  changed, and rule 4 is untouched since nothing here proposes changing what a storm looks like.
+- **Per-system config surface. THE CLAIM BELOW WAS STALE; CORRECTED 2026-09-18.** It read
+  *"Master toggles exist; per-system tuning knobs are not designed beyond `SeasonLengthDays`"*,
+  which stopped being true a long time ago: `ModConfig.cs` declares **eighteen sections and
+  ~150 bound keys**, and every system has real dials. What the audit on that date actually
+  found was the opposite problem — not missing dials but **two dials wired to nothing**
+  (`StormFireRiskMultiplier`, `StormWindMultiplier`; see the Weather section's comment) and
+  one system of fifteen, `SeasonSystem`, still returning a literal interval where its
+  fourteen siblings all read config. Both addressed. Remaining candidates, all
+  behaviour-preserving and none urgent: the season curves behind fire risk / plague growth /
+  cold (hardcoded in `SeasonSystem`), `WorldCondition.Hysteresis`, the shared 64m announce
+  radius copied into seven call sites, `PlagueGenesis`'s blight weight, `FogMath.VisibleFloor`,
+  and the two grudge coefficients in `RivalryMath`.

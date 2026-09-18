@@ -29,8 +29,9 @@ namespace RavenIron.RagnaroksWrath.Config
         public static ConfigEntry<float> MessageMinIntervalSeconds;
 
         // ---- Season ---------------------------------------------------------------------
-        public static ConfigEntry<int>  SeasonLengthDays;
-        public static ConfigEntry<bool> AnnounceSeasonChange;
+        public static ConfigEntry<int>   SeasonLengthDays;
+        public static ConfigEntry<float> SeasonIntervalSeconds;
+        public static ConfigEntry<bool>  AnnounceSeasonChange;
 
         // ---- Biome state ----------------------------------------------------------------
         public static ConfigEntry<float> BiomeStateIntervalSeconds;
@@ -251,6 +252,17 @@ namespace RavenIron.RagnaroksWrath.Config
                     "disagree with it.",
                     new AcceptableValueRange<int>(1, 120)));
 
+            // Every other IWorldSystem in this mod already takes its cadence from config; this
+            // was the one of fifteen still returning a literal, which is the kind of gap nobody
+            // notices because the value is fine. 10s is what it has always run at.
+            SeasonIntervalSeconds = cfg.Bind(season, "SeasonIntervalSeconds", 10f,
+                new ConfigDescription(
+                    "Seconds between season checks. This is also how often the server tells " +
+                    "clients what season it is, so a client that joins mid-game is right within " +
+                    "one of these. Season changes rarely; the cost of a shorter interval is the " +
+                    "broadcast, not the check.",
+                    new AcceptableValueRange<float>(1f, 300f)));
+
             AnnounceSeasonChange = cfg.Bind(season, "AnnounceSeasonChange", true,
                 "Announce season changes on screen. Automatically suppressed when Seasonality " +
                 "or Seasons (shudnal) is installed, since they already show the player the " +
@@ -291,15 +303,26 @@ namespace RavenIron.RagnaroksWrath.Config
                     "disagree about where the storm is.",
                     new AcceptableValueRange<float>(32f, 1024f)));
 
+            // NOT YET CONNECTED, and said plainly here because the alternative is a dial that
+            // lies. Found 2026-09-18: both of these are computed on demand and consumed by
+            // NOTHING except the storm's own log line. StormPlagueSpreadMultiplier below is the
+            // same shape and is genuinely live (PlagueSystem reads it twice), which is exactly
+            // what made these two invisible - the trio was verified in-game by reading that log
+            // line, and two thirds of it was the instrument reporting itself.
             StormFireRiskMultiplier = cfg.Bind(weather, "StormFireRiskMultiplier", 1.8f,
                 new ConfigDescription(
-                    "Fire risk multiplier inside a storm. Applies only within StormRangeMeters.",
+                    "RESERVED, AND CURRENTLY INERT - changing this changes nothing yet. It is " +
+                    "meant as the fire risk multiplier inside a storm, but nothing reads it: a " +
+                    "storm does not presently make fire worse. Storm lightning is a separate " +
+                    "mechanism with its own settings under Fire, and it does work.",
                     new AcceptableValueRange<float>(0f, 10f)));
 
             StormWindMultiplier = cfg.Bind(weather, "StormWindMultiplier", 2.0f,
                 new ConfigDescription(
-                    "Gameplay wind multiplier inside a storm. Feeds fire spread rate and " +
-                    "direction; does not touch the wind the player can see.",
+                    "RESERVED, AND CURRENTLY INERT - changing this changes nothing yet. It is " +
+                    "the gameplay wind figure a storm would raise, kept apart from the wind the " +
+                    "player can see, and WindSystem can already serve it per position - but no " +
+                    "system asks yet. It is waiting on directional fire spread.",
                     new AcceptableValueRange<float>(0f, 10f)));
 
             StormPlagueSpreadMultiplier = cfg.Bind(weather, "StormPlagueSpreadMultiplier", 1.5f,

@@ -12,11 +12,17 @@ namespace RavenIron.RagnaroksWrath.Systems.World
     /// WHAT THIS IS, AND POINTEDLY IS NOT. Crops planted in a zone tire its soil over time:
     /// the more saplings standing in a zone, the faster `Fertility` (a DEPLETION, 0 = rested)
     /// climbs; rest heals it through BiomeDrift like everything else. What this system does
-    /// NOT do yet is change growth speed or yield — a plant's lifecycle runs on its ZDO's
+    /// NOT do is change growth speed or yield ITSELF — a plant's lifecycle runs on its ZDO's
     /// OWNER, which on a dedicated server is a nearby client, and clients have no zone store
-    /// to read. Consuming depletion needs the client plugin's state sync (task 9). Writing it
-    /// is server-side and honest today, so the soil is already tired by the time the effect
-    /// arrives.
+    /// to read. That consumer is real and shipped: `Patches\Patch_Farming.cs` postfixes
+    /// `Plant.GetGrowTime` on the owning client and reads Fertility out of ZoneSync's cache,
+    /// so depleted soil genuinely grows crops slower. Writing depletion stays server-side and
+    /// honest, so the soil is already tired by the time the effect arrives.
+    ///
+    /// (This paragraph said the consumer "needs the client plugin's state sync (task 9)" and
+    /// read as undone until 2026-09-18, long after the patch shipped — while this system's own
+    /// boot log two lines down already said "the growth consumer bites client-side". When a
+    /// file disagrees with itself, believe the code.)
     ///
     /// THE SWEEP. `ZDOMan.GetAllZDOsWithPrefabIterative` is vanilla's own self-chunking walk
     /// (verified: appends matches, returns true when the index has covered every sector). One

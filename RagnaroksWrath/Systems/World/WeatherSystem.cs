@@ -104,16 +104,21 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             if (StormActive != wasActive)
             {
                 // Multipliers reported at the storm's own centre, at both ends of its life. This
-                // is the difference between claiming a storm changes gameplay and showing it:
-                // read the same numbers FireSystem will read, and watch them return to 1.0 when
-                // the storm lifts.
+                // line USED to print fire risk and wind alongside plague spread, worded as though
+                // all three drove gameplay, and it was cited as the in-game verification that
+                // they did. They did not: as of 2026-09-18 only plague spread has a consumer, and
+                // printing the other two next to it is how that went unnoticed for three weeks.
+                // An instrument that reports a number nothing acts on is not a weak instrument,
+                // it is a misleading one - so this now says which is which, and the day fire risk
+                // or wind gains a real consumer, move it up into the live half of the line.
                 Vector3 probe = StormCentre;
                 float wind = WindMultiplierAt(probe);
 
                 RagnaroksWrath.Log.LogInfo(
                     $"[{Name}] storm {(StormActive ? "began" : "ended")} - sky is '{CurrentEnvironment}' " +
                     $"(forceWeather={ModConfig.StormsForceWeather.Value}); at the centre: " +
-                    $"fireRisk x{FireRiskMultiplierAt(probe):F2}, plagueSpread x{PlagueSpreadMultiplierAt(probe):F2}, " +
+                    $"plagueSpread x{PlagueSpreadMultiplierAt(probe):F2} (live). " +
+                    $"Reserved, consumed by nothing yet: fireRisk x{FireRiskMultiplierAt(probe):F2}, " +
                     $"wind x{wind:F2} (vanilla {WindSystem.BaseIntensity:F2} -> gameplay " +
                     $"{WindState.Combine(WindSystem.BaseIntensity, wind):F2}).");
 
