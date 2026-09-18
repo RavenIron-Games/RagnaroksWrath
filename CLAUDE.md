@@ -439,7 +439,20 @@ rather than a parallel timer.
 for a contact radius of 1, the 9 zones landing in the store as a 3x3 block around the player,
 frost climbing 0.0024 to 0.0117 across two saves. Measured 0.280/h against a predicted 0.28/h.
 
-**Not started:** every other system, all Harmony patches, the entire client plugin.
+**Nothing is "not started".** This line read *"Not started: every other system, all Harmony
+patches, the entire client plugin"* until 2026-09-18, by which time all three claims were false:
+every system on the roadmap is built, seven Harmony patches ship in `Patches\`, and the separate
+client plugin was not built because it was **retired by decision** in favour of one role-aware DLL
+— see the locked-decisions table. The client-side work that line was waiting for exists as
+`Net\` (six syncs) and `Visuals\` (five procedural effects).
+
+**Two empty `// TODO: implement` stubs were deleted the same day: `Patch_EnvMan.cs` and
+`Patch_ZNetScene.cs`.** Neither was referenced anywhere, and both were named after the two things
+this file most insists must never happen — rule 4's "never patch `EnvMan` environment selection",
+and the `ZNetScene.CreateObjectsSorted` → `DestroyZDO` prefab landmine. An empty file called
+`Patch_EnvMan.cs` sitting in `Patches\` reads as pending work rather than as a decision, which is
+exactly backwards. If either name ever reappears, it should be because someone deliberately
+revisited a locked decision, not because a stub invited them to fill it in.
 
 
 See `docs/BACKLOG.md` for what to build next and in what order.

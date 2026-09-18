@@ -589,8 +589,15 @@ four framing calls and three flavor calls below are theirs:
 
 ---
 
-## 13. `RivalrySystem` — PHASE A BUILT 2026-08-26 at 0.11.0 (in-game verification pending);
-## phases B–E not started. PHASED.
+## 13. `RivalrySystem` — ALL FIVE PHASES BUILT 2026-08-26 (0.11.0 → 0.16.0). A, B and E
+## VERIFIED LIVE; C and D built with in-game verification still pending. PHASED.
+
+> Heading corrected 2026-09-18. It had read "PHASE A BUILT (in-game verification pending);
+> phases B–E not started" for three weeks while the body below it recorded the opposite on
+> every count: A was live-verified the same day it was written, B through E were all built,
+> and B and E were verified live too. Nobody reading only the heading would have known this
+> system was finished. Per-phase status is stated in each phase's own paragraph — read those,
+> not this line, if the two ever disagree again.
 
 Phase A landed: `RivalryMath` + `RivalryLedger` (167/167 off-game, 16 new — decay
 half-life exact, watermark monotonic, negatives floored on read, prune-to-sparse,
