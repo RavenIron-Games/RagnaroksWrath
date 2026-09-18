@@ -1,3 +1,160 @@
+# Session handoff — 2026-09-18 (0.27.2: the two-sky storm shipped, and the gate under it never worked)
+
+Read `CLAUDE.md` first, then this. The 2026-08-27 handoff below is SUPERSEDED but kept.
+
+## The one-line version
+
+The session set out to add random wet/dry storm looks. The looks work and are verified. Building
+the test to prove it found that **the mechanic the looks were supposed to drive — "rain suppresses
+lightning" — had never worked on a dedicated server, in any version.** That is 0.27.2.
+
+## Where things stand
+
+- **Repo `main` at 0.27.2, ALL PUSHED** (`dbae891`). 370/370 off-game tests. Binds clean against
+  Valheim **1.0.15**.
+- **`dist\RavenIron-RagnaroksWrath-0.27.2.zip` is built and verified — NOT UPLOADED.** The store
+  still serves **0.27.0**. 0.27.1 was built and never uploaded, so 0.27.2 carries BOTH the config
+  migration fixes and the lightning fix. This is the one mod that was ready to upload as of this
+  session; see "Upload status" below.
+- **`libs\` is on the 1.0.15 publicized set.** The owner regenerated
+  `valheim_Data\Managed\publicized_assemblies` by hand at 11:40 that day; `fetch-libs.ps1` was then
+  run in ALL SEVEN repos. Note this INVERTS the 1.0.7-era hazard — for once the in-game folder is
+  the current copy, not the stale trap. Do not learn "the in-game folder is stale" as a rule; the
+  rule is "let the per-file staleness guard decide".
+
+## THE BUG, because it will be tempting to re-introduce
+
+`FireSystem.TryLightning` gated on `EnvMan.IsWet()`. On a headless dedicated server that value is
+not merely wrong, **it is frozen**, and two independent vanilla local-player gates cause it:
+
+- `RandEventSystem.GetEnvOverride()` reads `m_activeEvent`, set only on a branch behind
+  `(bool)Player.m_localPlayer`.
+- `EnvMan.UpdateEnvironment`'s biome-roll fallback returns early when `Utils.GetMainCamera()` is null.
+
+Both are permanently true headless, so the server never applies the forced storm sky AND never
+rolls its own weather either. `IsWet()` sits at whatever `EnvSetup` `Awake` flagged as default —
+observed as `Clear` — for the entire process lifetime.
+
+**The fix is `LightningStrike.SkyAllows(forcedSky, stormIsDry, envIsWet)`**: with a sky forced, the
+rolled look decides (correct on the authority by construction, because the authority is what rolled
+it); with no sky forced, real weather decides, exactly as before. `FireSystem` short-circuits
+`IsWet()` away entirely in the forced case. A LISTEN HOST was never affected — it has a local
+player, so the override resolves and old and new agree.
+
+**CLAUDE.md's 2026-08-27 claim that a wet look "suppresses lightning via the rain gate" is
+corrected in place.** That run most likely watched the frozen default happen to agree with the roll.
+A green in-game verification that never tested the negative case is not a verification.
+
+## How it was verified, and why the second phase was the important one
+
+Two phases on Storm10, ONE config key apart, same binary:
+
+| phase | config | storms | bolts |
+|---|---|---|---|
+| 1 | `StormDryChance = 0` | 4 wet (incl. one RESUMED across a restart) | **0** |
+| 2 | `StormDryChance = 1` | 1 dry | **1**, into a tree, spread to ground fire, scorch banked |
+
+Four silent wet storms is a ~0.16% outcome under the old gate — but **it is also exactly what an
+inert `FireSystem` would produce**, and nothing logs per tick. Phase 2 is the control that tells
+those apart. If you ever re-verify this, do not skip it.
+
+Seven tests pin `SkyAllows`; **two were proven to fail against the old code** by reverting it and
+re-running, per the working agreement.
+
+## Instruments — this is the transferable part
+
+- **`devcommands` then `env`** in the client console prints `Environment: EnvSetup: ThunderStorm.`
+  or `Eikthyr.` — an authoritative client-side read of the storm sky, and the first time this
+  project has had one. Vanilla's own `env` is `onlyServer:true, isCheat:true` and is useless to a
+  joined client; ServerDevcommands' override is what makes it work, and only for an adminlist player.
+- **The vanilla `Wet` status icon** is the no-console equivalent, and it is exact rather than
+  approximate: `EnvMan.IsWet()` returns `s_isWet` ← `GetCurrentEnvironment()?.m_isWet`, and
+  `m_isWet` is the ONLY `EnvSetup` field feeding the `_Wet` shader global. Wetness in the gameplay
+  sense and in the visible sense are the same boolean by construction.
+- **"Is there thunder?" discriminates NOTHING.** `Thunder.cs` contains zero references to `EnvMan`,
+  `IsWet` or any environment name. Both looks have thunder. A question was wasted on this.
+- **The `storm began` log line now names WHOSE sky it is reporting.** It used to say
+  `sky is 'Clear'` while every client stood in a thunderstorm — that line is the single reason this
+  bug survived a previous verification.
+- Wetness ramps over `m_wetTransitionDuration`, **15s default**. A storm shorter than ~30s cannot be
+  trusted to show its sky; an early attempt at 30s duration would have produced a false negative.
+
+## Valheim 1.0.15 (live 2026-09-18) — a NULL RESULT, recorded on purpose
+
+Found by reading a client's console banner mid-session, not by noticing an update. Full drill run
+the same hour: **93/93 apiprobe surfaces resolve**; revprobe says every BUILT and every SHIPPED
+binary for all seven mods binds clean; network version still **40**; `Version.Player` **46** and
+`Version.World` **41** unmoved, so no save migration. Every member this project reaches for is
+unchanged. **Write null results down** — a release needing no change is the one nobody re-checks,
+which is how Undertow 0.5.1 and RavenEye 0.1.0 stayed broken on Hexium for two days after 1.0.7.
+
+## Upload status at end of session (nothing was uploaded)
+
+| mod | live on Hexium | local | verdict |
+|---|---|---|---|
+| **RagnaroksWrath** | 0.27.0 | **0.27.2** | READY — packaged, verified, pushed |
+| FireFront | 0.21.2 | 0.21.4 | Zip repackaged with the README fix, but **0.21.4 owes an in-game run** per its own HEAD commit |
+| Undertow | 0.6.0 | 0.7.1 | Zip binds clean, but its state is a concurrent session's to vouch for |
+| Cairn / RavenEye / ValkyriesCargo / TheRavensCall / WhereTheCrowFlies | — | — | already current |
+
+`manifest.json` now pins `RavenIronStudios-FireFront-0.21.2`, **not** 0.21.4. The Hexium API says
+0.21.2 is the newest version that actually EXISTS on the store; pinning a local-only version would
+name something the store cannot resolve. Dependency strings are minimums and resolve forward, so
+this stays correct whether or not 0.21.4 ships.
+
+## Storm10, the verification server
+
+`C:\Users\donfr\ValheimServers\Storm10`, port **2477**, world `Storm10`, own `-savedir`, `public 0`.
+STOPPED and RESTORED to production config at end of session (300s storms every 1–3h, lightning mean
+15, `VerboseLogging` false). The test config is kept beside it as
+`com.raveniron.ragnarokswrath.cfg.posttest-20260918` if this needs running again — restoring that
+gives 90s storms every 60–120s with a 1-minute lightning mean and `StormAvoidBaseMeters 0`.
+
+**Clamp traps found while setting that up**, all silent: `StormMinIntervalSeconds` floors at **60**,
+`StormMaxIntervalSeconds` at **120**, `StormDurationSeconds` at **30**. Values below those do not
+refuse, they clamp, and the file keeps claiming what you typed.
+
+**Config edits only take while the process is STOPPED.** BepInEx's `ConfigFile.Reload()` runs from
+the constructor only, so a hand edit to a running server's cfg is invisible to it.
+
+## Traps this session walked into, so the next one need not
+
+- **The BepInEx log APPENDS across boots.** Twice a grep of it produced a confident, well-formed,
+  wrong answer. Always anchor to the LAST `BepInEx ... - valheim_server` banner line and discard
+  everything above it.
+- **`strings | grep` is not a version reader.** It grabs the first version-shaped literal and
+  reported `1.0.0` for a 1.113.0 mod. Use
+  `[Reflection.AssemblyName]::GetAssemblyName($dll).Version`.
+- **The csproj `<Version>` bump does NOT touch `PluginVersion`**, the hardcoded `BepInPlugin`
+  constant — which is what every log line and every other mod reads. A boot announced `0.27.1`
+  while running 0.27.2 code. `package.ps1`'s three-way guard catches it at package time; the boot
+  banner catches it sooner.
+- **Gale HARDLINKS profile files to its package cache** (link count 2). `cp` over one in place
+  writes THROUGH and corrupts the cached package for every profile using it. `rm` first, then copy.
+  Recorded in auto-memory under `ravenrest-gale-profiles`.
+- **`python` on this machine is the Microsoft Store stub** and hangs. Use node or the edit tools.
+- **`2>&1` on a native exe in PowerShell** yields exit 255 on success. Do not redirect.
+- **`git push` needs `env -u GITHUB_TOKEN`** — a scopeless `GITHUB_TOKEN` in the environment
+  overrides the keyring and 403s git-over-HTTPS while leaving `gh api` working, so it looks
+  intermittent rather than broken. The real fix is clearing that variable, which is the owner's.
+
+## What is NOT done
+
+1. **Upload 0.27.2 to Hexium.** Owner's action; nothing blocks it.
+2. **`wrath status` says nothing about weather or storms.** Zero matches for `Weather|Storm` in the
+   terminal patch — which is why this whole session was log archaeology. The smallest honest fix is
+   one line in `Status()` reading the CALLING machine's own `EnvMan`
+   (`EnvMan.instance?.GetCurrentEnvironment()?.m_name`), needing no networking, because `EnvMan` is
+   a local singleton on every machine. It would have exposed this bug in seconds: server says
+   `Clear`, client says `ThunderStorm`. **Do NOT reuse `WeatherSystem.CurrentEnvironment`** — that
+   is authority-only (`WorldTick` gates every system on `IsSimulationAuthority`) and reads `""`
+   forever on a pure client, the same shape as the `SeasonSystem.Current` bug `SeasonSync` exists
+   to fix. Needs its own in-game run; a clean build proves nothing about `EnvMan` member access.
+3. **The storm-look roll's RATE is unverified.** Variety is proven (both looks rolled and rendered);
+   that the split matches `StormDryChance` would need ~100+ storms and was not attempted.
+4. **`docs/BACKLOG.md` task 16** — softening the boot warning that still calls Seasonality a
+   conflict — remains open and untouched.
+
 # Session handoff — 2026-08-27 (THE ROADMAP IS COMPLETE; the EA rehearsal begins)
 
 ## PUBLISHED — 2026-08-27, evening
