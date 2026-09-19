@@ -88,7 +88,38 @@ binary for all seven mods binds clean; network version still **40**; `Version.Pl
 unchanged. **Write null results down** — a release needing no change is the one nobody re-checks,
 which is how Undertow 0.5.1 and RavenEye 0.1.0 stayed broken on Hexium for two days after 1.0.7.
 
-## Upload status at end of session (nothing was uploaded)
+## Upload status
+
+> ✅ **UPDATED 2026-09-19 — everything is published and every version matches.** The table below
+> this block is the 2026-09-18 snapshot, kept because it is what that session actually saw; it is
+> now stale in every row. Live figures read from Hexium's own API (`/api/v1/package/` on the
+> Valheim subdomain) rather than from a listing page, whose search does not filter.
+>
+> | mod | live on Hexium | local | state |
+> |---|---|---|---|
+> | RagnaroksWrath | 0.27.2 | 0.27.2 | current |
+> | FireFront | 0.21.7 | 0.21.7 | current |
+> | Undertow | 0.7.2 | 0.7.2 | current |
+> | Cairn | 0.8.0 | 0.8.0 | current |
+> | RavenEye | 0.2.0 | 0.2.0 | current |
+> | ValkyriesCargo | 0.1.4 | 0.1.4 | current |
+> | TheRavensCall | 1.3.0 | 1.3.0 | current |
+> | WhereTheCrowFlies | 1.1.3 | 1.1.3 | current |
+>
+> **Nothing is owed to the store.** Two notes worth carrying:
+>
+> - **Undertow went 0.6.0 → 0.7.2 in one step.** 0.7.0 and 0.7.1 were built and never published,
+>   so every existing installation receives the drift lines AND the config migration together.
+>   That is also the first time any of this family's migrations runs on a config file belonging to
+>   somebody who is not the owner — on the stamp-only path, since all three of Undertow's ledger
+>   tables are empty by measurement.
+> - **This mod's `manifest.json` still pins `RavenIronStudios-FireFront-0.21.2`, and the note below
+>   explaining why is now out of date.** It was pinned there because 0.21.2 was the newest version
+>   that EXISTED on the store; 0.21.7 has existed since 2026-09-18. The pin remains CORRECT either
+>   way, because dependency strings are minimums that resolve forward — but the constraint that
+>   forced it is gone, so bump it or leave it on the merits rather than on that reasoning.
+
+## Upload status at the end of the 2026-09-18 session (nothing was uploaded THEN)
 
 | mod | live on Hexium | local | verdict |
 |---|---|---|---|
