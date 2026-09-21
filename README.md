@@ -69,3 +69,16 @@ Config appears at `BepInEx/config/com.raveniron.ragnarokswrath.cfg` — every sy
 ## Early build
 
 Every system is live and dedicated-server-verified — most rates to four decimal places against prediction — but this is an early, evolving mod. Report anything strange: the logs are chatty in all the right places.
+
+---
+
+## Support Raven Iron
+
+Every Raven Iron mod is free, and stays free — all of it, always. Nothing is held
+back for patrons, and nothing ever will be.
+
+If you'd like to help cover server hosting and test hardware:
+
+- **Patreon** — <https://www.patreon.com/cw/RavenIronGames>
+- **Discord** — <https://discord.gg/AGKDEurAVa> — a channel per mod, and where the
+  testing happens
