@@ -232,6 +232,16 @@ overlap if it is ever installed alongside.
 
 ## Known traps
 
+- **A manifest dependency is what a mod manager INSTALLS, not a floor it improves on.** Hexium's
+  packaging page calls dependency versions minimums, and this repo's docs repeated that as
+  "resolves forward" for a month. On 2026-09-23 the owner watched a manager installing RW 0.27.3
+  fetch exactly `RavenIronStudios-FireFront-0.21.2` while FireFront 1.0.0 was live, so 0.27.4 exists
+  only to move that line. **Before every RW release, compare the FireFront pin with
+  `valheim.hexium.gg/api/experimental/package/RavenIronStudios/FireFront/`**, and move it whenever a
+  FireFront release has shipped since (after checking the reflected surfaces still resolve). Hexium DOES
+  rewrite the BepInExPack pin on upload — every Raven Iron listing says 5.4.2350 whatever the zip
+  said — and does NOT rewrite any other dependency, which is why this one stayed wrong.
+
 - **BepInEx's `ConfigDefinition` is ORDINAL AND CASE-SENSITIVE**, and the config migration was
   written on the opposite assumption until 2026-09-18. `Equals` is
   `string.Equals(Key, other.Key) && string.Equals(Section, other.Section)` — the two-argument
@@ -394,6 +404,14 @@ overlap if it is ever installed alongside.
 ---
 
 ## Current state
+
+**0.27.4 (2026-09-23): the FireFront pin moved 0.21.2 → 1.0.0, and BepInExPack 5.4.2333 → 5.4.2350.
+No code changed.** See the dependency trap above. FireFront 1.0.0's surfaces were checked by
+decompiling the copy Hexium serves and by booting Storm10 on RW 0.27.4 + FireFront 1.0.0 (both
+now left in place there; the replaced DLLs sit beside them as `.0.27.3.bak` / `.0.24.0.bak`):
+`FireFront 1.0.0 detected — bridging` and a minute of ticks without a warning. The igniter and
+lightning members resolve lazily, only with a fire or a storm, so that boot did not exercise them;
+the decompile does.
 
 **Ships in 0.27.3 (merged 2026-09-23): the build no longer embeds the build machine's folders.**
 Every shipped DLL through 0.27.2 carried the absolute PDB path (C:\Users\<name>\…) in its PE

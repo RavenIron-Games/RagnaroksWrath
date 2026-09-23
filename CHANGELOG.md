@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.27.4
+
+**Installing Ragnarok's Wrath now brings FireFront 1.0.0, not 0.21.2.** The manifest has named
+FireFront as a dependency since 0.23.0, and it named `RavenIronStudios-FireFront-0.21.2`: the
+newest FireFront the store carried when that line was last set. Hexium's packaging notes call a
+dependency version a minimum, so it looked harmless to leave behind. It was not: on 2026-09-23 a
+mod manager installing 0.27.3 fetched exactly FireFront 0.21.2, a version from before FireFront's
+1.0 release, instead of the 1.0.0 the store offers.
+
+- **No code changed.** Only the version number moves.
+- **FireFront 1.0.0 carries everything this mod reaches for.** It was checked two ways:
+  - Decompiling the 1.0.0 that Hexium serves. A mod manager's own download of it is
+    byte-identical to the uploaded package. It has `FireFront.Fire.FireManager` with its static
+    `Instance`, `CollectActiveFirePositions(List<Vector3>)`, `CurrentFireIgniterPlayerId` and
+    `IgniteGroundNear(Vector3, float)`, one overload each, under the unchanged plugin GUID.
+  - Booting a dedicated server on this build with FireFront 1.0.0. The bridge resolved on its
+    first pass and raised no warning in the minute the server ran.
+- **The BepInExPack line moves from 5.4.2333 to 5.4.2350.** That changes the file, not what
+  installs. Hexium replaces that one dependency on upload: it lists 5.4.2350 for the live 0.27.3,
+  whose zip says 5.4.2333, and does the same for this studio's other mods. It does not do that for
+  FireFront.
+- **An older FireFront still works if you install by hand.** The README's minimums still hold:
+  0.17.2 for burn scars, 0.17.3 to attribute arson, 0.18.0 for storm lightning. The manifest line
+  only decides what a mod manager fetches.
+
 ## 0.27.3
 
 **A boss that kills you keeps the story and never gains a level.** The nemesis mark stars up the
