@@ -64,12 +64,31 @@ namespace RavenIron.RagnaroksWrath.Patches
                 zdo.Set(KillsHash, kills);
                 zdo.Set(NameHash, __instance.GetPlayerName());
 
-                int level = NemesisMark.NextLevel(killer.GetLevel(), ModConfig.NemesisMaxLevel.Value);
-                if (level != killer.GetLevel()) killer.SetLevel(level);
+                // A BOSS KEEPS THE STORY AND NEVER GAINS A LEVEL. The mark costs nothing; the
+                // level is the difficulty, and on a boss it is catastrophic — vanilla scales
+                // health LINEARLY (SetLevel -> SetupMaxHealth -> GetMaxHealthBase() * level),
+                // so a boss that kills a player twice reaches NemesisMaxLevel 3 and fights on
+                // with THREE TIMES its health plus per-level attack damage. Observed live on
+                // 2026-09-23: a twice-marked Queen was, in the owner's words, almost unbeatable.
+                // Nothing is lost by marking without levelling: EnemyHud builds the boss health
+                // bar's name from Character.GetHoverName (EnemyHud:154 and :200, boss branch at
+                // :188), which is exactly what our decorating postfix appends to — so a boss
+                // still wears "slayer of <name> x2" over the fight it earned.
+                // `m_boss` is plain prefab data, never written at runtime, so IsBoss() is
+                // answerable on the victim's client the moment the killer resolves.
+                bool levelled = false;
+                int level = killer.GetLevel();
+                if (!killer.IsBoss())
+                {
+                    level = NemesisMark.NextLevel(level, ModConfig.NemesisMaxLevel.Value);
+                    if (level != killer.GetLevel()) { killer.SetLevel(level); levelled = true; }
+                }
 
                 RagnaroksWrath.Log.LogInfo(
                     $"Nemesis: {killer.name} marked — slayer of {__instance.GetPlayerName()} " +
-                    $"(kills {kills}, level {level}).");
+                    $"(kills {kills}, level {level}" +
+                    (killer.IsBoss() ? ", boss — marked but never levelled" : (levelled ? "" : ", already at cap")) +
+                    ").");
             }
             catch (Exception ex)
             {

@@ -1874,6 +1874,12 @@ namespace RagnaroksWrath.Tests
 
             Check("a first kill lifts level 1 to 2", NemesisMark.NextLevel(1, 3) == 2);
             Check("the cap holds at the top", NemesisMark.NextLevel(3, 3) == 3);
+            // Deliberate, and it has a consequence worth stating: because a lower cap never
+            // walks a creature back down, LOWERING NemesisMaxLevel CANNOT REPAIR ANYTHING
+            // ALREADY MARKED. When a twice-marked Queen turned out to be near-unbeatable on
+            // 2026-09-23, that is why the fix had to be "never level a boss in the first
+            // place" (0.27.3) rather than "cap bosses lower" — the latter would have shipped
+            // a fix that provably does nothing to the boss anyone had already met.
             Check("a cap below current never demotes", NemesisMark.NextLevel(3, 2) == 3);
             Check("a garbage level is floored to 1 before stepping", NemesisMark.NextLevel(0, 3) == 2);
             Check("a garbage cap is floored to 1, and current still wins", NemesisMark.NextLevel(2, 0) == 2);
