@@ -395,6 +395,14 @@ overlap if it is ever installed alongside.
 
 ## Current state
 
+**Unreleased on main (2026-09-23): the build no longer embeds the build machine's folders.**
+Every shipped DLL through 0.27.2 carried the absolute PDB path (C:\Users\<name>\…) in its PE
+debug directory. The csproj now sets DeterministicSourcePaths and always names the repo root as
+a SourceRoot, so the DLL carries /_/…/RagnaroksWrath.pdb and neither the DLL nor the PDB names a
+local path; the IL is unchanged. At the next cut, say in the changelog that the DLL no longer
+carries an absolute build path that included the build machine's user name (quote no path), and
+name the commit the DLL was built from: the md5 follows the commit and no longer the checkout folder (the PDB's Source Link URL carries the commit).
+
 **Built and VERIFIED IN-GAME (2026-09-18, 0.27.2, dedicated server Storm10 on Valheim 1.0.15):
 two-sky storms, AND the rain gate they hang off — which turned out to have never worked on a
 dedicated server.** Two phases, one config key apart, same binary:
