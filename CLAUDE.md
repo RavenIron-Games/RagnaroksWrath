@@ -518,8 +518,10 @@ default happen to agree with the roll. Caught live on Storm10 on 2026-09-18 by a
 one log line after the mod announced rain would suppress it, in both of that session's wet
 storms, while the client showed the vanilla `Wet` status. `FireSystem` now gates on
 `WeatherSystem.StormIsDry` whenever `StormsForceWeather` is on — see `LightningStrike.SkyAllows`
-— and consults `EnvMan.IsWet()` only when no sky is forced, where it is the honest answer. A
-listen host was never affected: it has a local player, so the override resolves and old and new
+— and consults `EnvMan.IsWet()` only when no sky is forced. **That fallback is honest only on a
+listen host.** On a dedicated server the same camera gate freezes it at `Awake`'s default (dry), so
+with no sky forced — the DEFAULT config — lightning ignores natural rain: an OPEN BUG, see Known open
+bugs below. A listen host was never affected by the forced-sky bug either: it has a local player, so the override resolves and old and new
 agree. **FireFront was never affected either** — it already reads the authoritative
 `RandEventSystem.GetCurrentRandomEvent()`; an early reading of its `raining 0/0` heartbeat as a
 shared bug was wrong, that ratio is `wet/burning` and simply meant nothing was alight.
@@ -540,7 +542,14 @@ no client run can establish. Store written, file on disk, read back with values 
 rotated, no `.tmp` orphaned. The two worlds produced two separate stores in the same directory,
 so world-scoping is now demonstrated rather than only unit-tested.
 
-**Known open bugs:** none. The wholly-corrupt-file case was fixed 2026-08-25. `File.ReadAllLines`
+**Known open bugs:** one, found 2026-09-23. **With `StormsForceWeather` off (the default), a dedicated
+server's storm lightning ignores natural rain**, because `EnvMan.IsWet()` never leaves `Awake`'s
+default headless (`UpdateEnvironment` returns early with no camera; decompiled from 1.0.15). The README
+promises "never in rain". The likely fix is to ask FireFront's public
+`FireFront.Utils.ValheimBridge.IsRainingAt(Vector3)`, which replays vanilla's weather roll for a
+position; details in docs/HANDOFF.md. Not fixed: the design is the owner's call.
+
+The wholly-corrupt-file case was fixed 2026-08-25. `File.ReadAllLines`
 does not throw on binary garbage — it returns junk strings that each fail per-line parsing — so
 `Load()` now also treats "the file had content, nothing parsed, and at least one line failed" as
 corruption: error-level log naming the file, then quarantine to `.corrupt` so the next autosave
