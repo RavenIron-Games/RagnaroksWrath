@@ -232,6 +232,14 @@ overlap if it is ever installed alongside.
 
 ## Known traps
 
+- **A vanilla `RandomEvent` registered with `m_pauseIfNoPlayerInArea = true` never ends once everyone
+  leaves it.** It reads like "pause while nobody is watching" and it is a freeze: `RandomEvent.Update`
+  returns before `m_time += dt` whenever the flag is on and no character ZDO is within `m_eventRange`
+  of `m_pos` (decompiled from 1.0.15), so the event can never pass its duration. Two mods here hit it
+  independently — Valkyrie's Cargo's merchant visit (its PR #97) and this mod's storm (0.27.5) — and
+  both had once described the flag as a vanilla behaviour worth inheriting. Only name, time and
+  position are saved, so a changed registration reaches an event already frozen in a world on its
+  next load. The flag here is `StormArea.ClockPausesWithNobodyInside`, pinned false by a test.
 - **A manifest dependency is what a mod manager INSTALLS, not a floor it improves on.** Hexium's
   packaging page calls dependency versions minimums; this repo's upload notes said the same from
   2026-08-27 ("managers install that or newer"), and the 2026-09-18 handoff called the stale pin
@@ -410,6 +418,16 @@ overlap if it is ever installed alongside.
 
 ## Current state
 
+**Built and VERIFIED IN-GAME (2026-09-23, 0.27.5, dedicated server Storm10 on Valheim 1.0.15): storms
+end unwatched.** Reported the same day: a storm never stopped once its zone emptied. Cause in the
+known trap above. Three phases, each the control for the next: on **0.27.4** a player walked out of a
+180 s storm and stayed online, and at 5 min 12 s it had not ended; the server was stopped with that
+frozen storm saved, booted on **0.27.5** with nobody online, vanilla restored the storm by name
+(`Random event set: ragnarokswrath_devastating_storm_dry`) and it logged `storm ended` within 2½ min;
+on 0.27.5 a player walked out of a fresh 180 s storm and it ended at 181 s. The same run showed the
+review fix: `storm began` now lands in the same second as `storm started`, where 0.27.4 logged it a
+weather tick later. Storm10 test settings (60–120 s interval, 180 s storms, verbose) are backed up
+beside the cfg as `.pre-stormclock-20260923`.
 **0.27.4 (2026-09-23): the FireFront pin moved 0.21.2 → 1.0.0, and BepInExPack 5.4.2333 → 5.4.2350.
 No code changed.** See the dependency trap above. FireFront 1.0.0's surfaces were checked by
 decompiling the copy Hexium serves and by booting Storm10 on RW 0.27.4 + FireFront 1.0.0 (both

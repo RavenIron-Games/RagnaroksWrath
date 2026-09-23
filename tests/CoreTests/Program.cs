@@ -1054,6 +1054,13 @@ namespace RagnaroksWrath.Tests
             Check("exactly at the sky ceiling is still inside",
                 StormArea.Contains(centre, range, new Vector3(100f, StormArea.SkyCeiling, 100f)));
 
+            // The storm event registers this as m_pauseIfNoPlayerInArea. True froze the clock of any
+            // storm nobody stood in, so it never ended, blocked every later storm and burdened the
+            // world forever (fixed in 0.27.5). Pinned because the old comment sold the freeze as a
+            // vanilla feature worth inheriting, which is exactly how it gets switched back on.
+            bool pauses = StormArea.ClockPausesWithNobodyInside;
+            Check("a storm's clock runs on with nobody inside it", !pauses);
+
             // 3-4-5: proves the formula rather than merely its comparisons.
             Check($"DistanceXZ matches the flat distance ({StormArea.DistanceXZ(new Vector3(0f, 0f, 0f), new Vector3(3f, 999f, 4f)):F2})",
                 Math.Abs(StormArea.DistanceXZ(new Vector3(0f, 0f, 0f), new Vector3(3f, 999f, 4f)) - 5f) < 0.0001f);
