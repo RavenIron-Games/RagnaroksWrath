@@ -1,8 +1,9 @@
 # Session handoff — 2026-09-23 (0.27.3 and 0.27.4: bosses stop levelling, and the FireFront pin moves)
 
-Read `CLAUDE.md` first, then this. The 2026-09-18 handoff below is SUPERSEDED but kept, and
-**its statements that dependency strings are "minimums that resolve forward" are WRONG** — see
-the dependency trap at the top of CLAUDE.md's Known traps.
+Read `CLAUDE.md` first, then this. The 2026-09-18 handoff below is SUPERSEDED but kept, and two
+of its statements are WRONG: that dependency strings are "minimums that resolve forward" (see the
+dependency trap at the top of CLAUDE.md's Known traps), and that with no sky forced "real weather
+decides" (see the open bug below).
 
 ## The one-line version
 
@@ -12,11 +13,19 @@ moves the pin to FireFront 1.0.0 and changes no code.
 
 ## Where things stand
 
-- **0.27.3 is merged** (PR #4, merge commit `3cda48d`) **and live on Hexium** (the owner uploaded it).
-  Its zip was built from a fresh clone at `41b0738`.
-- **0.27.4 is on branch `release/0.27.4`**, packaged from a fresh clone of that branch, **NOT
-  uploaded, NOT merged** at the time of writing. Nothing in it is code: manifest pins, the three
-  version sites, and docs.
+- **0.27.4 is merged** (PR #5, merge commit `0bfcf8c`) **and LIVE on Hexium** since 19:31Z. The API
+  lists it with `RavenIronStudios-FireFront-1.0.0`, so a mod manager now fetches FireFront 1.0.0. Its
+  zip was built from a fresh clone at `395bfbd`. Nothing in it is code: manifest pins, the three
+  version sites, README and docs. 0.27.3 (PR #4, `3cda48d`, zip from `41b0738`) went up earlier
+  the same day.
+- **Hexium REPACKS uploads.** The CDN file (`cdn.hexium.gg/upload/732/<version>.zip`) is 32–37 bytes
+  smaller than the zip we built, for 0.27.2, 0.27.3 and 0.27.4 alike, and its etag is not our md5.
+  Check an upload with a HEAD request against that offset; never expect a byte match.
+- **The website matches the store** (RavenIron-website `180dc90`, live on ravenirongames.com within a
+  minute): the RW, FireFront, Undertow, The Raven's Call and Where The Crow Flies pages were redrafted
+  against each mod's shipped source and every changed claim checked by a second reader. The RW page no
+  longer promises "never in rain" (see the open bug), and the 0.24.0 news post carries a dated
+  correction about the rain gate.
 - **Storm10 now runs RW 0.27.4 + FireFront 1.0.0** (replaced DLLs kept beside them as
   `RagnaroksWrath.dll.0.27.3.bak` and `FireFront.dll.0.24.0.bak`). STOPPED. Tartarus is hosted on
   bamf, not from this install.
@@ -37,14 +46,37 @@ moves the pin to FireFront 1.0.0 and changes no code.
    upload (the reproducibility claim, "the largest health pool in the game", and a comment passed off
    as test coverage). Run one on every release; it is cheap next to a wrong changelog on the store.
 
+## OPEN BUG, found 2026-09-23 while updating the website: with no sky forced, a dedicated server's lightning ignores rain
+
+`StormsForceWeather` is OFF by default. In that case `LightningStrike.SkyAllows` falls back to
+`EnvMan.IsWet()`, and 0.27.2's changelog says "real weather decides". **On a dedicated server it does
+not.** Decompiled from 1.0.15 (`EnvMan.UpdateEnvironment`): after the override check, the biome
+weather roll returns early when `Utils.GetMainCamera()` is null, which it always is headless. So
+`m_currentEnv` never leaves `Awake`'s `GetDefaultEnv()`, and `IsWet()` reads that default's
+`m_isWet` (false for Clear) for the life of the process. Result: under the default config, a storm's
+bolt can land in natural rain on every dedicated server. The README's "never in rain" (live on the
+Hexium listing) is false there; a listen host is fine, because its `EnvMan` really runs.
+
+**Not fixed, because the fix is a design call.** The obvious path: FireFront 1.0.0 already solved
+exactly this problem. `FireFront.Utils.ValheimBridge.IsRainingAt(Vector3)` (public static, shipped
+since FireFront 0.20.x, present in 1.0.0) replays vanilla's per-period, per-biome-sector weather roll
+for a position instead of trusting headless `EnvMan`. Lightning already requires FireFront, so asking
+it for the strike position costs no new dependency. It would be a FOURTH reflected surface: resolve it
+lazily like the other three, log once if absent, and ask FireFront to document it as a cross-mod
+contract. Until then, the no-forced-sky branch should not be described as honest anywhere.
+
 ## Not done, deliberately or for want of a word
 
 - **A `wrath nemesis` recovery command** — designed, not built. `NextLevel` never demotes, so a boss
   levelled under 0.27.2 that is still alive keeps its level. A freshly summoned boss starts clean.
 - **Cairn and RavenEye still say BepInExPack 5.4.2333** in their manifests; Hexium rewrites it, so
   it is cosmetic until their next release.
-- **The Tartarus server on bamf** needs RW 0.27.4 and FireFront 1.0.0 when the owner next updates it;
-  what it runs now was not checked from here.
+- **The Tartarus server on bamf** needs RW 0.27.4 and FireFront 1.0.0 at its next update; what it
+  runs now was not checked from here.
+- **Players who installed 0.27.3 through a mod manager may still have FireFront 0.21.2.** Updating RW
+  does not necessarily upgrade a dependency that is already installed.
+- **README: "FireFront 0.18.0+ for storm lightning" is conservative**, not proven necessary (FireFront's
+  0.17.3 build already has `IgniteGroundNear`). Left alone; nothing older than 0.18.4 is on the store.
 
 # Session handoff — 2026-09-18 (0.27.2: the two-sky storm shipped, and the gate under it never worked)
 
