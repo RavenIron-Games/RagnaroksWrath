@@ -1,3 +1,51 @@
+# Session handoff — 2026-09-23 (0.27.3 and 0.27.4: bosses stop levelling, and the FireFront pin moves)
+
+Read `CLAUDE.md` first, then this. The 2026-09-18 handoff below is SUPERSEDED but kept, and
+**its statements that dependency strings are "minimums that resolve forward" are WRONG** — see
+the dependency trap at the top of CLAUDE.md's Known traps.
+
+## The one-line version
+
+The owner reported a twice-marked Queen was almost unbeatable; **0.27.3** marks bosses but never
+levels them. The owner then reported that installing 0.27.3 pulled FireFront 0.21.2; **0.27.4**
+moves the pin to FireFront 1.0.0 and changes no code.
+
+## Where things stand
+
+- **0.27.3 is merged** (PR #4, merge commit `3cda48d`) **and live on Hexium** (the owner uploaded it).
+  Its zip was built from a fresh clone at `41b0738`.
+- **0.27.4 is on branch `release/0.27.4`**, packaged from a fresh clone of that branch, **NOT
+  uploaded, NOT merged** at the time of writing. Nothing in it is code: manifest pins, the three
+  version sites, and docs.
+- **Storm10 now runs RW 0.27.4 + FireFront 1.0.0** (replaced DLLs kept beside them as
+  `RagnaroksWrath.dll.0.27.3.bak` and `FireFront.dll.0.24.0.bak`). STOPPED. Tartarus is hosted on
+  bamf, not from this install.
+
+## What was learned, in the order it cost something
+
+1. **The nemesis death hook runs on the VICTIM'S CLIENT.** Its `Nemesis:` lines are in the client's
+   LogOutput (the Gale profile's), never the server's. The first monitor watched the server and saw
+   nothing.
+2. **Package from a fresh clone, never from this folder.** Line endings are source bytes under
+   `DeterministicSourcePaths`, the repo has no `.gitattributes`, and the working tree drifts (Git
+   Bash's `sed -i` and most tools write LF; a Git for Windows checkout writes CRLF). A package built
+   in place could be reproduced by nobody. Two fresh clones of the same commit build byte-identical
+   DLLs. A cross-repo fix is offered as a separate task.
+3. **A dependency pin is what gets installed.** See CLAUDE.md. Hexium lists the current
+   BepInExPack whatever the zip says, and does that for no other dependency.
+4. **An independent audit of the 0.27.3 zip caught three false sentences in my own changelog** before
+   upload (the reproducibility claim, "the largest health pool in the game", and a comment passed off
+   as test coverage). Run one on every release; it is cheap next to a wrong changelog on the store.
+
+## Not done, deliberately or for want of a word
+
+- **A `wrath nemesis` recovery command** — designed, not built. `NextLevel` never demotes, so a boss
+  levelled under 0.27.2 that is still alive keeps its level. A freshly summoned boss starts clean.
+- **Cairn and RavenEye still say BepInExPack 5.4.2333** in their manifests; Hexium rewrites it, so
+  it is cosmetic until their next release.
+- **The Tartarus server on bamf** needs RW 0.27.4 and FireFront 1.0.0 when the owner next updates it;
+  what it runs now was not checked from here.
+
 # Session handoff — 2026-09-18 (0.27.2: the two-sky storm shipped, and the gate under it never worked)
 
 Read `CLAUDE.md` first, then this. The 2026-08-27 handoff below is SUPERSEDED but kept.
