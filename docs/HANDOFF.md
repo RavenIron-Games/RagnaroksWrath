@@ -31,8 +31,8 @@ moves the pin to FireFront 1.0.0 and changes no code.
    Bash's `sed -i` and most tools write LF; a Git for Windows checkout writes CRLF). A package built
    in place could be reproduced by nobody. Two fresh clones of the same commit build byte-identical
    DLLs. A cross-repo fix is offered as a separate task.
-3. **A dependency pin is what gets installed.** See CLAUDE.md. Hexium rewrites the BepInExPack pin
-   on upload and no other.
+3. **A dependency pin is what gets installed.** See CLAUDE.md. Hexium lists the current
+   BepInExPack whatever the zip says, and does that for no other dependency.
 4. **An independent audit of the 0.27.3 zip caught three false sentences in my own changelog** before
    upload (the reproducibility claim, "the largest health pool in the game", and a comment passed off
    as test coverage). Run one on every release; it is cheap next to a wrong changelog on the store.

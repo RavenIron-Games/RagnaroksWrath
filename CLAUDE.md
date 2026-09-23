@@ -233,14 +233,19 @@ overlap if it is ever installed alongside.
 ## Known traps
 
 - **A manifest dependency is what a mod manager INSTALLS, not a floor it improves on.** Hexium's
-  packaging page calls dependency versions minimums, and this repo's docs repeated that as
-  "resolves forward" for a month. On 2026-09-23 the owner watched a manager installing RW 0.27.3
-  fetch exactly `RavenIronStudios-FireFront-0.21.2` while FireFront 1.0.0 was live, so 0.27.4 exists
+  packaging page calls dependency versions minimums; this repo's upload notes said the same from
+  2026-08-27 ("managers install that or newer"), and the 2026-09-18 handoff called the stale pin
+  harmless because pins "resolve forward". On 2026-09-23 a manager installing RW 0.27.3 fetched
+  exactly `RavenIronStudios-FireFront-0.21.2` while FireFront 1.0.0 was live, so 0.27.4 exists
   only to move that line. **Before every RW release, compare the FireFront pin with
   `valheim.hexium.gg/api/experimental/package/RavenIronStudios/FireFront/`**, and move it whenever a
   FireFront release has shipped since (after checking the reflected surfaces still resolve). Hexium DOES
-  rewrite the BepInExPack pin on upload — every Raven Iron listing says 5.4.2350 whatever the zip
-  said — and does NOT rewrite any other dependency, which is why this one stayed wrong.
+  list the current BepInExPack whatever the zip says — every Raven Iron listing reads 5.4.2350,
+  including one uploaded before 5.4.2350 existed, so it resolves when it lists rather than on
+  upload — and does NOT do that for any other dependency, which is why this one stayed wrong.
+  (README's "FireFront 0.18.0+ for storm lightning" is conservative, not proven necessary: the
+  0.17.3 build in FireFront's `dist\` already has a public `IgniteGroundNear`. 0.18.0 was chosen as
+  the earliest version FireFront's git history can show; nothing older is on the store.)
 
 - **BepInEx's `ConfigDefinition` is ORDINAL AND CASE-SENSITIVE**, and the config migration was
   written on the opposite assumption until 2026-09-18. `Equals` is

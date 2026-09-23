@@ -18,19 +18,19 @@ mod manager installing 0.27.3 fetched exactly FireFront 0.21.2, a version from b
   - Booting a dedicated server on this build with FireFront 1.0.0. The bridge resolved on its
     first pass and raised no warning in the minute the server ran.
 - **The BepInExPack line moves from 5.4.2333 to 5.4.2350.** That changes the file, not what
-  installs. Hexium replaces that one dependency on upload: it lists 5.4.2350 for the live 0.27.3,
-  whose zip says 5.4.2333, and does the same for this studio's other mods. It does not do that for
-  FireFront.
-- **An older FireFront still works if you install by hand.** The README's minimums still hold:
-  0.17.2 for burn scars, 0.17.3 to attribute arson, 0.18.0 for storm lightning. The manifest line
-  only decides what a mod manager fetches.
+  installs. For that one dependency Hexium lists the current pack whatever the zip says: 5.4.2350
+  for the live 0.27.3, whose zip says 5.4.2333, and the same for this studio's other mods. It does
+  not do that for FireFront.
+- **An older FireFront still works if you install by hand.** The README says which FireFront
+  each feature needs. The manifest line only decides what a mod manager fetches.
+- **The README now matches 0.27.3 on bosses.** It said every creature that kills you gains a
+  star; a boss is marked but never does.
 
 ## 0.27.3
 
 **A boss that kills you keeps the story and never gains a level.** The nemesis mark stars up the
 creature that killed you — and nothing ever excluded bosses from that. A Queen who killed the same
-player twice reached `NemesisMaxLevel` 3 and, in the owner's words on 2026-09-23, was *almost
-unbeatable*. They beat her anyway; the next owner might not.
+player twice reached `NemesisMaxLevel` 3 and became close to unbeatable.
 
 - **Why a level is catastrophic on a boss specifically.** Vanilla scales health LINEARLY —
   `SetLevel` → `SetupMaxHealth` → `SetMaxHealth(GetMaxHealthBase() * level)` — so level 3 is three
@@ -151,7 +151,7 @@ config file was never actually stamped, so it migrated a second time and looked 
 - **Two more corrections, found by auditing the sibling ports (same day).**
   - **`wrath status` reported the plan's INTENT, not what happened.** The summary is written
     before a single step runs, and a rebase row naming a key this build no longer binds
-    warns and moves on — so the one line the owner reads could claim a value was moved that
+    warns and moves on — so the one line a server owner reads could claim a value was moved that
     was never found, with the only contradiction a warning hundreds of log lines earlier.
     Refusals now correct the summary, and the count is per boot.
   - Ragnarok's Wrath retires no config key, so the retirement-failure gate the two sibling
