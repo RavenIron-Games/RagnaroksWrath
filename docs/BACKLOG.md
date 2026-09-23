@@ -111,7 +111,8 @@ criteria, from one log:
 ```
 
 Player-confirmed: announcement and banner both seen; sky visually unchanged. Storms are REAL
-vanilla `RandomEvent`s (banner, timer, pause-when-nobody-near, replication all inherited) and
+vanilla `RandomEvent`s (banner, timer, pause-when-nobody-near, replication all inherited —
+the pause SWITCHED OFF in 0.27.5: it froze any storm nobody stood in, forever) and
 POSITIONAL — every multiplier is `...At(pos)`, using the same containment maths as vanilla's
 banner (`StormArea`, copied from `IsInsideRandomEventArea`: XZ-only, strict `<`, y>3000 bail),
 so the two cannot disagree about where a storm is.

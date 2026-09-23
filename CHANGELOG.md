@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.27.5
+
+**A storm now blows over whether or not anyone is near it.** Every storm was registered as a vanilla
+event that stops its clock while no player is within its range. So a storm that everyone walked away
+from, or logged off under, never reached its end. It stayed on the server indefinitely, blocked every
+later storm, and kept counting against the whole world's condition.
+
+- **Why it froze.** Vanilla adds no time to an event registered with `m_pauseIfNoPlayerInArea` while
+  nobody is inside its area (Valheim 1.0.15, decompiled). This mod reads "a storm event exists" as "a
+  storm is on", so a frozen storm was a storm forever: the scheduler waited on it, the world's
+  condition kept its storm burden, and every client kept receiving it. The storm's clock now runs
+  whoever is near. Valkyrie's Cargo hit the same flag on its merchant visit and made the same fix.
+- **A storm already stuck in a world clears itself.** The save keeps only a storm's name, time and
+  position and takes everything else from the running build, so the first boot on 0.27.5 resumes a
+  frozen storm and it runs out the time it had left. No migration, and nobody has to go and find it.
+- **Verified on a dedicated server (Valheim 1.0.15) in three steps, each a control for the next:**
+  - On 0.27.4, a player walked out of a 180-second storm and stayed online. Five minutes after it
+    began, it had not ended.
+  - That frozen storm was saved, and the server booted on 0.27.5 with nobody online. It came back
+    from the save and ended within two and a half minutes.
+  - On 0.27.5, a player walked out of a new 180-second storm and stayed online. It ended 181 seconds
+    after it began.
+- **A storm's start is now reported the moment it starts,** not on the next weather tick. Now that a
+  storm runs out unwatched, the shortest allowed storm (30 s) could otherwise begin and end between two
+  ticks of the slowest allowed weather interval (60 s), and never be logged, announced as passed, or
+  seen by anything that reacts to storms.
+- **`StormDurationSeconds` is now time from the start, in game seconds.** Its description said vanilla
+  paused it while nobody was near. Only a single-player pause stops it now, as it stops every clock
+  in the game. The key and its default are unchanged, so no config file changes.
+
 ## 0.27.4
 
 **Installing Ragnarok's Wrath now brings FireFront 1.0.0, not 0.21.2.** The manifest has named

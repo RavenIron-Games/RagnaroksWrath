@@ -25,6 +25,22 @@ namespace RavenIron.RagnaroksWrath.Core
         /// <summary>Above this height a position is outside every storm. Vanilla's constant.</summary>
         public const float SkyCeiling = 3000f;
 
+        /// <summary>
+        /// Whether a storm's clock stops while nobody stands inside its area. FALSE, and it must stay
+        /// false: this is the value `WeatherSystem` registers as the event's `m_pauseIfNoPlayerInArea`.
+        ///
+        /// Through 0.27.4 it was true, described as vanilla's "stop running where nobody is" behaviour
+        /// inherited for free. It is not a behaviour, it is a freeze. `RandomEvent.Update` returns
+        /// before `m_time += dt` whenever the flag is on and no player is within the event's range
+        /// (decompiled from 1.0.15), so a storm everyone had walked away from, or logged off under,
+        /// never reached its duration and never ended. Because this mod reads "a storm event exists"
+        /// as "a storm is on", the frozen storm also blocked every later storm and kept adding its
+        /// burden to the whole world's condition, indefinitely. A storm is weather: it blows over
+        /// whether or not anyone watched. ValkyriesCargo hit the same flag on its merchant visit and
+        /// made the same fix (its PR #97).
+        /// </summary>
+        public const bool ClockPausesWithNobodyInside = false;
+
         public static bool Contains(Vector3 centre, float range, Vector3 position)
         {
             if (position.y > SkyCeiling) return false;

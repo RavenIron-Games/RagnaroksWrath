@@ -307,8 +307,10 @@ namespace RavenIron.RagnaroksWrath.Config
 
             StormDurationSeconds = cfg.Bind(weather, "StormDurationSeconds", 300f,
                 new ConfigDescription(
-                    "How long a storm runs. Vanilla pauses this while no player is in the area, " +
-                    "so it is time experienced rather than time elapsed.",
+                    "How long a storm runs, in game seconds from when it starts: only a single-player " +
+                    "pause stops it, as it stops every clock in the game. It runs out " +
+                    "whether or not anyone is near it: a storm is weather, and it blows over " +
+                    "unwatched.",
                     new AcceptableValueRange<float>(30f, 3600f)));
 
             StormRangeMeters = cfg.Bind(weather, "StormRangeMeters", 96f,

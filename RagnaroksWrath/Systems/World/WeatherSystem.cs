@@ -18,9 +18,10 @@ namespace RavenIron.RagnaroksWrath.Systems.World
     /// exists for owners who run no weather mod at all.
     ///
     /// STORMS ARE REAL VANILLA EVENTS. A `RandomEvent` is appended to `RandEventSystem.m_events`
-    /// and triggered by name, so it inherits vanilla's banner, timer, music, pause-when-nobody-is-
-    /// near, and its network replication — none of which we would get right by reimplementing.
-    /// What we add is when it fires and what it means; what it looks like stays vanilla's.
+    /// and triggered by name, so it inherits vanilla's banner, timer, music and network
+    /// replication — none of which we would get right by reimplementing. What we add is when it
+    /// fires and what it means; what it looks like stays vanilla's. The one vanilla behaviour we
+    /// switch OFF is pause-when-nobody-is-near: see `StormArea.ClockPausesWithNobodyInside`.
     ///
     /// STORMS ARE POSITIONAL, AND SO ARE THEIR EFFECTS. A vanilla event has a position and a
     /// range, so a storm 5 km away must not change fire risk here. Every multiplier this system
@@ -130,39 +131,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             // turns "we did not force weather" from a claim into something a log can settle:
             // with StormsForceWeather off these follow vanilla's own cycle, and a value that
             // snapped to ThunderStorm on start and back afterwards would be visible here.
-            if (StormActive != wasActive)
-            {
-                // Multipliers reported at the storm's own centre, at both ends of its life. This
-                // line USED to print fire risk and wind alongside plague spread, worded as though
-                // all three drove gameplay, and it was cited as the in-game verification that
-                // they did. They did not: as of 2026-09-18 only plague spread has a consumer, and
-                // printing the other two next to it is how that went unnoticed for three weeks.
-                // An instrument that reports a number nothing acts on is not a weak instrument,
-                // it is a misleading one - so this now says which is which, and the day fire risk
-                // or wind gains a real consumer, move it up into the live half of the line.
-                Vector3 probe = StormCentre;
-                float wind = WindMultiplierAt(probe);
-
-                // Whose sky is this? On a dedicated server CurrentEnvironment is the SERVER'S
-                // own weather, which a forced storm never overrides — reading it as "the
-                // storm's sky" is what made 'Clear' look normal under a ThunderStorm all
-                // through the 2026-09-18 session. Name the owner of the value, always.
-                string skyText = ModConfig.StormsForceWeather.Value
-                    ? $"clients see '{(StormIsDry ? ModConfig.StormDryEnvironment.Value : ModConfig.StormForcedEnvironment.Value)}'" +
-                      $", this machine's own sky is '{CurrentEnvironment}' and is NOT the storm's"
-                    : $"sky is '{CurrentEnvironment}' (no sky forced, so this IS the storm's)";
-
-                RagnaroksWrath.Log.LogInfo(
-                    $"[{Name}] storm {(StormActive ? "began" : "ended")} - {(StormIsDry ? "DRY" : "wet")} " +
-                    $"look, {skyText} " +
-                    $"(forceWeather={ModConfig.StormsForceWeather.Value}); at the centre: " +
-                    $"plagueSpread x{PlagueSpreadMultiplierAt(probe):F2} (live). " +
-                    $"Reserved, consumed by nothing yet: fireRisk x{FireRiskMultiplierAt(probe):F2}, " +
-                    $"wind x{wind:F2} (vanilla {WindSystem.BaseIntensity:F2} -> gameplay " +
-                    $"{WindState.Combine(WindSystem.BaseIntensity, wind):F2}).");
-
-                if (!StormActive) MessageFeed.ToEveryone("The storm passes.");
-            }
+            if (StormActive != wasActive) ReportTransition();
 
             // Only the authority schedules. A client running this would fire storms into its own
             // copy of the world and nowhere else - the same failure shape as a console command
@@ -299,9 +268,11 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                     // A storm is weather, not a raid: it should reach wilderness, not only bases.
                     m_nearBaseOnly = false,
 
-                    // Vanilla's own "stop running where nobody is" behaviour, inherited rather
-                    // than reimplemented.
-                    m_pauseIfNoPlayerInArea = true,
+                    // OFF, deliberately. With it on, vanilla adds no time to the storm while
+                    // nobody is inside it, so a storm everyone left never ended (0.27.5). Only
+                    // name, time and position are saved, so a storm frozen in an older world
+                    // picks this up on load and finishes the time it had left.
+                    m_pauseIfNoPlayerInArea = StormArea.ClockPausesWithNobodyInside,
 
                     m_biome = (Heightmap.Biome)(-1),   // every biome
 
@@ -330,6 +301,48 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             {
                 RagnaroksWrath.Log.LogError($"[WeatherSystem] could not register storm event '{name}': {ex}");
             }
+        }
+
+        /// <summary>
+        /// Log a storm's beginning or end, with its look and its multipliers, and tell everyone when
+        /// it passes. Called from <see cref="Tick"/> when the refreshed state differs from the last
+        /// tick's, and from <see cref="StartStorm"/> the moment this machine starts one. Since 0.27.5
+        /// a storm runs out whether or not anyone is near it, so at the shortest legal duration (30 s)
+        /// and the longest legal weather interval (60 s) it could otherwise begin and end between two
+        /// ticks and never be reported, announced as passed, or seen by anything reading StormActive.
+        /// </summary>
+        private void ReportTransition()
+        {
+            // Multipliers reported at the storm's own centre, at both ends of its life. This
+            // line USED to print fire risk and wind alongside plague spread, worded as though
+            // all three drove gameplay, and it was cited as the in-game verification that
+            // they did. They did not: as of 2026-09-18 only plague spread has a consumer, and
+            // printing the other two next to it is how that went unnoticed for three weeks.
+            // An instrument that reports a number nothing acts on is not a weak instrument,
+            // it is a misleading one - so this now says which is which, and the day fire risk
+            // or wind gains a real consumer, move it up into the live half of the line.
+            Vector3 probe = StormCentre;
+            float wind = WindMultiplierAt(probe);
+
+            // Whose sky is this? On a dedicated server CurrentEnvironment is the SERVER'S
+            // own weather, which a forced storm never overrides — reading it as "the
+            // storm's sky" is what made 'Clear' look normal under a ThunderStorm all
+            // through the 2026-09-18 session. Name the owner of the value, always.
+            string skyText = ModConfig.StormsForceWeather.Value
+                ? $"clients see '{(StormIsDry ? ModConfig.StormDryEnvironment.Value : ModConfig.StormForcedEnvironment.Value)}'" +
+                  $", this machine's own sky is '{CurrentEnvironment}' and is NOT the storm's"
+                : $"sky is '{CurrentEnvironment}' (no sky forced, so this IS the storm's)";
+
+            RagnaroksWrath.Log.LogInfo(
+                $"[{Name}] storm {(StormActive ? "began" : "ended")} - {(StormIsDry ? "DRY" : "wet")} " +
+                $"look, {skyText} " +
+                $"(forceWeather={ModConfig.StormsForceWeather.Value}); at the centre: " +
+                $"plagueSpread x{PlagueSpreadMultiplierAt(probe):F2} (live). " +
+                $"Reserved, consumed by nothing yet: fireRisk x{FireRiskMultiplierAt(probe):F2}, " +
+                $"wind x{wind:F2} (vanilla {WindSystem.BaseIntensity:F2} -> gameplay " +
+                $"{WindState.Combine(WindSystem.BaseIntensity, wind):F2}).");
+
+            if (!StormActive) MessageFeed.ToEveryone("The storm passes.");
         }
 
         private void StartStorm(Vector3 centre)
@@ -375,6 +388,12 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                       $"{(dry ? "dry" : "wet")}, but StormsForceWeather is off so the sky is the " +
                       "world's own and the roll changes nothing visible. Lightning follows the " +
                       "real weather.");
+
+            // Report the beginning now rather than on the next tick, so the storm's end is always a
+            // transition this system sees, however short the storm (see ReportTransition).
+            bool wasActive = StormActive;
+            RefreshStormState();
+            if (StormActive != wasActive) ReportTransition();
         }
 
         /// <summary>
