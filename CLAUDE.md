@@ -408,8 +408,8 @@ records it differ byte-wise with identical IL. Package only from the committed t
 a boss that kills you is marked and never levelled.** Reported live the same day: a Queen who had
 killed the owner twice reached `NemesisMaxLevel` 3 and, with vanilla's LINEAR health scaling
 (`GetMaxHealthBase() * level`), fought at three times her health — almost unbeatable. The fix is
-the owner's choice among three offered: mark, never level (`Patch_Nemesis`, gated on
-`IsBoss()`). Verified with a control, because a guard that suppressed EVERY level-up looks the
+the owner's choice among four offered (one extra star on bosses, mark but never level, leave
+it, a default-off toggle): mark, never level (`Patch_Nemesis`, gated on `IsBoss()`). Verified with a control, because a guard that suppressed EVERY level-up looks the
 same on the boss row: Eikthyr killed TestNomad twice and logged `kills 2, level 1, boss — marked
 but never levelled`, and the owner read `slayer of TestNomad x2` on his boss bar by eye; a
 greydwarf killed them twice and climbed 1 → 2 → 3. **The instrument trap that cost a round-trip:

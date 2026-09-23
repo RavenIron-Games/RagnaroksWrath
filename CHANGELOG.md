@@ -39,7 +39,7 @@ the user name of the machine it was built on. The build now maps the repository 
 prefix, so neither the DLL nor its symbols name any local folder. The compiled code is unchanged.
 A side effect worth knowing if you compare binaries: the DLL's contents now follow the commit it
 was built from rather than the folder it was checked out into, so two clean builds of the same
-commit match. The 0.27.3 DLL is built from the commit that adds this entry.
+commit match.
 
 ## 0.27.2
 
