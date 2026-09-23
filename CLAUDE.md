@@ -421,13 +421,15 @@ overlap if it is ever installed alongside.
 **Built and VERIFIED IN-GAME (2026-09-23, 0.27.5, dedicated server Storm10 on Valheim 1.0.15): storms
 end unwatched.** Reported the same day: a storm never stopped once its zone emptied. Cause in the
 known trap above. Three phases, each the control for the next: on **0.27.4** a player walked out of a
-180 s storm and stayed online, and at 5 min 12 s it had not ended; the server was stopped with that
+180 s storm and stayed online, and at 5 min 12 s it had not ended (they logged off 3 s later, and it
+still had not ended when the server stopped 16 s after that); the server was stopped with that
 frozen storm saved, booted on **0.27.5** with nobody online, vanilla restored the storm by name
 (`Random event set: ragnarokswrath_devastating_storm_dry`) and it logged `storm ended` within 2½ min;
 on 0.27.5 a player walked out of a fresh 180 s storm and it ended at 181 s. The same run showed the
 review fix: `storm began` now lands in the same second as `storm started`, where 0.27.4 logged it a
-weather tick later. Storm10 test settings (60–120 s interval, 180 s storms, verbose) are backed up
-beside the cfg as `.pre-stormclock-20260923`.
+weather tick later. Storm10 is back on its production storm settings (`.pre-stormclock-20260923`
+holds them); the test settings (60–120 s interval, 180 s storms, verbose) are kept beside the cfg as
+`.stormclock-test-20260923`. It still runs RW 0.27.5, with 0.27.4 kept as `.0.27.4.bak`.
 **0.27.4 (2026-09-23): the FireFront pin moved 0.21.2 → 1.0.0, and BepInExPack 5.4.2333 → 5.4.2350.
 No code changed.** See the dependency trap above. FireFront 1.0.0's surfaces were checked by
 decompiling the copy Hexium serves and by booting Storm10 on RW 0.27.4 + FireFront 1.0.0 (both
