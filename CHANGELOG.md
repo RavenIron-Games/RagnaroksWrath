@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.27.3
+
+**A boss that kills you keeps the story and never gains a level.** The nemesis mark stars up the
+creature that killed you — and nothing ever excluded bosses from that. A Queen who killed the same
+player twice reached `NemesisMaxLevel` 3 and, in the owner's words on 2026-09-23, was *almost
+unbeatable*. They beat her anyway; the next owner might not.
+
+- **Why a level is catastrophic on a boss specifically.** Vanilla scales health LINEARLY —
+  `SetLevel` → `SetupMaxHealth` → `SetMaxHealth(GetMaxHealthBase() * level)` — so level 3 is three
+  times a health pool that was already sized for a boss fight, and per-level attack damage lands
+  on top. On an ordinary creature the same arithmetic is a fair fight; on a boss it is a wall.
+- **Bosses are still marked.** The kill count still climbs and the plate still reads
+  `slayer of <name> x2`, because the mark was never the problem. `EnemyHud` builds the boss health
+  bar's name from `Character.GetHoverName` (the same method our decorating postfix appends to), so
+  a boss now wears the story of the fight without the arithmetic. `Character.m_boss` is plain
+  prefab data that nothing writes at runtime, so `IsBoss()` is answerable on the victim's client
+  the moment the killer resolves.
+- **Lowering `NemesisMaxLevel` was never a fix and could not have been.** `NemesisMark.NextLevel`
+  refuses to demote by design, so a cap lowered today leaves every creature already marked exactly
+  where it is. That is why this is a "never level a boss" change rather than a tuning change, and
+  a comment on the test that pins non-demotion now says so. The boss gate itself was verified in
+  the game (below); the test harness does not cover it.
+- **Not changed, deliberately: tamed creatures.** They looked like the same class of bug and are
+  not — vanilla's `MonsterAI.SetTarget` structurally refuses to let a tame target the player who
+  damaged it (`!attacker.IsPlayer() || !m_character.IsTamed()`), so an `IsTamed()` guard would be
+  code defending against something the engine already prevents.
+- **Not changed: the other `SetLevel`.** `Patch_Consequence`'s `CreatureSpawner.Spawn` postfix is
+  the nest and bone-pile path, already gated on `m_maxLevel < 2`, and boss altars never go through
+  it. Checked rather than assumed, because fixing one of two identical hazards is how this returns.
+- **Verified in-game on a dedicated server before release.** Eikthyr killed the same player twice
+  and stayed at level 1 while his boss health bar read `slayer of TestNomad x2`; a greydwarf killed
+  them twice and climbed 1 → 2 → 3, stopping at the cap. The greydwarf is the half that matters —
+  a guard that suppressed every level-up would make the boss row look identical.
+
+**Also in this release: the DLL no longer carries the build machine's folders.** Every build
+through 0.27.2 embedded an absolute path to its debug symbols in the DLL, and that path included
+the user name of the machine it was built on. The build now maps the repository root to a neutral
+prefix, so neither the DLL nor its symbols name any local folder. The compiled code is unchanged.
+A side effect worth knowing if you compare binaries: the DLL's contents now follow the source it
+was built from rather than the folder it was built in. Line endings count as source, so two builds
+of the same commit match only when their checkouts used the same line endings. The 0.27.3 package
+was built from a fresh clone with Git for Windows' default settings, which is what reproduces it.
+
 ## 0.27.2
 
 **On a dedicated server, a storm's rolled look decided nothing.** The wet storm was supposed to

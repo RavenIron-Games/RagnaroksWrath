@@ -395,13 +395,34 @@ overlap if it is ever installed alongside.
 
 ## Current state
 
-**Unreleased on main (2026-09-23): the build no longer embeds the build machine's folders.**
+**Ships in 0.27.3 (merged 2026-09-23): the build no longer embeds the build machine's folders.**
 Every shipped DLL through 0.27.2 carried the absolute PDB path (C:\Users\<name>\…) in its PE
 debug directory. The csproj now sets DeterministicSourcePaths and always names the repo root as
 a SourceRoot, so the DLL carries /_/…/RagnaroksWrath.pdb and neither the DLL nor the PDB names a
-local path; the IL is unchanged. At the next cut, say in the changelog that the DLL no longer
-carries an absolute build path that included the build machine's user name (quote no path), and
-name the commit the DLL was built from: the md5 follows the commit and no longer the checkout folder (the PDB's Source Link URL carries the commit).
+local path; the IL is unchanged. The 0.27.3 changelog says so without quoting a path. Keep in
+mind the md5 now follows the commit AND the source bytes rather than the checkout folder (the
+PDB's Source Link URL carries the commit, and each source file's checksum feeds the PDB id the
+DLL embeds), so a DLL built from a dirty tree and one built from the commit that records it
+differ byte-wise with identical IL. **Line endings are source bytes, and this repo has no
+`.gitattributes`:** on 2026-09-23 the working tree held 23 CRLF and 51 LF `.cs` files (tools
+write LF; a Git for Windows checkout writes CRLF), so a package built in the working tree was
+reproducible by nobody. A verification agent proved it both ways — a plain clone built a
+different md5, and the same clone with the working tree's exact bytes copied over matched.
+**Package from a fresh clone of the pushed commit**, not from this folder; 0.27.3 was.
+
+**Built and VERIFIED IN-GAME (2026-09-23, 0.27.3, dedicated server Storm10 on Valheim 1.0.15):
+a boss that kills you is marked and never levelled.** Reported live the same day: a Queen who had
+killed the owner twice reached `NemesisMaxLevel` 3 and, with vanilla's LINEAR health scaling
+(`GetMaxHealthBase() * level`), fought at three times her health — almost unbeatable. The fix is
+the owner's choice among four offered (one extra star on bosses, mark but never level, leave
+it, a default-off toggle): mark, never level (`Patch_Nemesis`, gated on `IsBoss()`). Verified with a control, because a guard that suppressed EVERY level-up looks the
+same on the boss row: Eikthyr killed TestNomad twice and logged `kills 2, level 1, boss — marked
+but never levelled`, and the owner read `slayer of TestNomad x2` on his boss bar by eye; a
+greydwarf killed them twice and climbed 1 → 2 → 3. **The instrument trap that cost a round-trip:
+the death hook runs on the VICTIM'S CLIENT, so its `Nemesis:` lines are in the client's
+LogOutput (the Gale profile's), never the server's.** Lowering the cap was never a fix —
+`NemesisMark.NextLevel` refuses to demote by design, so marks already in a world stay where
+they are; a `wrath nemesis` recovery command is designed but deliberately unbuilt.
 
 **Built and VERIFIED IN-GAME (2026-09-18, 0.27.2, dedicated server Storm10 on Valheim 1.0.15):
 two-sky storms, AND the rain gate they hang off — which turned out to have never worked on a
