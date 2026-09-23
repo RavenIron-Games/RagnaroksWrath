@@ -400,9 +400,15 @@ Every shipped DLL through 0.27.2 carried the absolute PDB path (C:\Users\<name>\
 debug directory. The csproj now sets DeterministicSourcePaths and always names the repo root as
 a SourceRoot, so the DLL carries /_/…/RagnaroksWrath.pdb and neither the DLL nor the PDB names a
 local path; the IL is unchanged. The 0.27.3 changelog says so without quoting a path. Keep in
-mind the md5 now follows the commit rather than the checkout folder (the PDB's Source Link URL
-carries the commit), so a DLL built from a dirty tree and one built from the commit that
-records it differ byte-wise with identical IL. Package only from the committed tree.
+mind the md5 now follows the commit AND the source bytes rather than the checkout folder (the
+PDB's Source Link URL carries the commit, and each source file's checksum feeds the PDB id the
+DLL embeds), so a DLL built from a dirty tree and one built from the commit that records it
+differ byte-wise with identical IL. **Line endings are source bytes, and this repo has no
+`.gitattributes`:** on 2026-09-23 the working tree held 23 CRLF and 51 LF `.cs` files (tools
+write LF; a Git for Windows checkout writes CRLF), so a package built in the working tree was
+reproducible by nobody. A verification agent proved it both ways — a plain clone built a
+different md5, and the same clone with the working tree's exact bytes copied over matched.
+**Package from a fresh clone of the pushed commit**, not from this folder; 0.27.3 was.
 
 **Built and VERIFIED IN-GAME (2026-09-23, 0.27.3, dedicated server Storm10 on Valheim 1.0.15):
 a boss that kills you is marked and never levelled.** Reported live the same day: a Queen who had
