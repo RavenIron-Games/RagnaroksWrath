@@ -1155,6 +1155,34 @@ namespace RagnaroksWrath.Tests
                     billed.Count == 1 && arson.ZoneCount == 1);
             }
 
+            // Per-fire blame from FireFront 1.0.2+: each fire bills only whoever lit it.
+            {
+                var blame = new List<KeyValuePair<ZoneKey, long>>();
+                var pos = new List<Vector3>
+                {
+                    new Vector3(10f, 0f, 10f),     // zone (0,0), A
+                    new Vector3(20f, 0f, 20f),     // zone (0,0), A again
+                    new Vector3(30f, 0f, 30f),     // zone (0,0), B
+                    new Vector3(700f, 0f, 700f),   // far away, natural
+                    new Vector3(-700f, 0f, 5f),    // far away, B
+                };
+                var ign = new List<long> { 111L, 111L, 222L, 0L, 222L };
+                bool ok = FireBlame.Collect(pos, ign, blame);
+                var z0 = new ZoneKey(0, 0);
+                Check("per-fire blame: one row per zone and igniter, natural fires bill nobody",
+                    ok && blame.Count == 3
+                    && blame.Contains(new KeyValuePair<ZoneKey, long>(z0, 111L))
+                    && blame.Contains(new KeyValuePair<ZoneKey, long>(z0, 222L))
+                    && blame.Contains(new KeyValuePair<ZoneKey, long>(ZoneKey.FromWorldPos(pos[4]), 222L))
+                    && !blame.Exists(p => p.Key == ZoneKey.FromWorldPos(pos[3])));
+                Check("A is never billed for B's fire far away",
+                    !blame.Contains(new KeyValuePair<ZoneKey, long>(ZoneKey.FromWorldPos(pos[4]), 111L)));
+
+                ign.RemoveAt(0);
+                Check("lists that disagree book nothing",
+                    !FireBlame.Collect(pos, ign, blame) && blame.Count == 0);
+            }
+
             // Zone size is 64; positions 10m apart share a zone, 100m apart do not.
             var fires = new List<Vector3>
             {
@@ -1413,6 +1441,31 @@ namespace RagnaroksWrath.Tests
                     !TitleEdge.Rises(plagueHeld, 7L, false) && TitleEdge.Rises(plagueHeld, 7L, true));
                 Check("edges are per player",
                     TitleEdge.Rises(plagueHeld, 8L, true) && !TitleEdge.Rises(plagueHeld, 7L, true));
+            }
+
+            // Winterborn's clock restarts every winter (fix review 2026-09-24): a server up
+            // through two winters must not award it the moment the second one begins.
+            {
+                var clock = new Dictionary<long, float>();
+                var held = new HashSet<long>();
+                const float need = 1800f;
+                int awards = 0;
+                bool Tick(bool winter, float dt)
+                {
+                    float s = TitleEdge.WinterSeconds(clock, 7L, winter, dt);
+                    bool rose = TitleEdge.Rises(held, 7L, winter && s >= need);
+                    if (rose) awards++;
+                    return rose;
+                }
+
+                for (int i = 0; i < 200; i++) Tick(true, 10f);          // 2000 s of winter one
+                Check("Winterborn is earned once in a long winter", awards == 1);
+                for (int i = 0; i < 50; i++) Tick(false, 10f);          // spring to autumn
+                Check("the winter clock is empty outside winter", clock.Count == 0);
+                bool instant = Tick(true, 10f);                         // winter two begins
+                Check("a second winter does not award on its first tick", !instant && awards == 1);
+                for (int i = 0; i < 179; i++) Tick(true, 10f);          // 1800 s into winter two
+                Check("a second winter awards again after its own full stretch", awards == 2);
             }
 
             string dir = Path.Combine(Path.GetTempPath(), "rw_titles_" + Guid.NewGuid().ToString("N"));

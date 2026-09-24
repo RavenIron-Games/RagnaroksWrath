@@ -90,8 +90,17 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         private readonly List<Vector3> _firePositions = new List<Vector3>(64);
         private readonly List<ZoneKey> _burningZones = new List<ZoneKey>(16);
 
-        // Arson attribution follows the igniter's own fire, not every fire on the map (review
-        // 2026-09-24): FireFront's igniter is one global, so see ArsonFootprint.
+        // Arson attribution (review 2026-09-24). FireFront 1.0.2+ says who lit EACH fire
+        // (`CollectActiveFiresWithIgniters`, same order as CollectActiveFirePositions, 0 = natural
+        // or unknown); when it does, blame is per fire (FireBlame). Older FireFront has only one
+        // global igniter, and then ArsonFootprint keeps the blame to the zones that fire reached.
+        private MethodInfo _collectWithIgnitersMethod;
+        private bool _collectWithIgnitersResolved;
+        private bool _perFire;                     // this tick's collect carried per-fire igniters
+        private readonly List<long> _fireIgniters = new List<long>(64);
+        private readonly object[] _collectWithIgnitersArgs = new object[2];
+        private readonly List<KeyValuePair<ZoneKey, long>> _blame = new List<KeyValuePair<ZoneKey, long>>(16);
+        private bool _blameMismatchLogged;
         private readonly ArsonFootprint _arson = new ArsonFootprint();
         private readonly List<ZoneKey> _arsonZones = new List<ZoneKey>(16);
         private readonly object[] _collectArgs = new object[1];
@@ -175,16 +184,36 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             float delta = FireScorch.ScorchDelta(ModConfig.FireScorchPerMinute.Value, deltaSeconds);
             if (delta <= 0f) return;
 
-            // Task 13's arson writer: the fire's culprit, from FireFront's optional igniter
-            // surface, booked the same scorch this tick burns into each of THEIR zones. 0 means
-            // natural fire, attributed to nobody. FireFront's igniter is one global for the whole
-            // map while it runs several fire events, so only the zones the igniter's own fire has
-            // reached by contact are billed (ArsonFootprint); an unrelated fire elsewhere is not.
-            long igniter = TryReadIgniter();
-            _arson.Observe(igniter, _burningZones, _arsonZones);
+            // Task 13's arson writer: each fire's culprit booked the same scorch this tick burns
+            // into their zones. 0 means natural fire, attributed to nobody.
+            //  - FireFront 1.0.2+: per fire. Each burning zone books every distinct igniter
+            //    whose fire is in it (FireBlame).
+            //  - Older FireFront: one global igniter for the whole map, so only the zones that
+            //    igniter's own fire has reached by contact are billed (ArsonFootprint).
             float harmPerPoint = ModConfig.ArsonHarmPerScorchPoint.Value;
-            bool bookHarm = igniter != 0 && _arsonZones.Count > 0 && harmPerPoint > 0f
-                            && ModConfig.EnableRivalry.Value && RivalryLedger.IsLoaded;
+            bool harmWanted = harmPerPoint > 0f && ModConfig.EnableRivalry.Value && RivalryLedger.IsLoaded;
+            long igniter = 0;
+            bool bookHarm = false;
+            if (_perFire)
+            {
+                _arson.Clear();
+                if (!FireBlame.Collect(_firePositions, _fireIgniters, _blame) && !_blameMismatchLogged)
+                {
+                    _blameMismatchLogged = true;
+                    RagnaroksWrath.Log.LogWarning(
+                        $"[{Name}] FireFront returned {_firePositions.Count} fire(s) but " +
+                        $"{_fireIgniters.Count} igniter(s) - no arson booked while they disagree.");
+                }
+                if (harmWanted)
+                    for (int i = 0; i < _blame.Count; i++)
+                        RivalryLedger.AddHarm(_blame[i].Key, _blame[i].Value, delta * harmPerPoint);
+            }
+            else
+            {
+                igniter = TryReadIgniter();
+                _arson.Observe(igniter, _burningZones, _arsonZones);
+                bookHarm = igniter != 0 && _arsonZones.Count > 0 && harmWanted;
+            }
 
             for (int i = 0; i < _burningZones.Count; i++)
             {
@@ -234,10 +263,11 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 IntervalSeconds, ModConfig.LightningMeanMinutes.Value);
             if (_rng.NextDouble() > chance) return;
 
-            // FireFront's fire event is global and its igniter is captured ONCE — a bolt
-            // joining a player-lit event would bill that arsonist for the sky's scorch.
-            // While an attributed fire burns, the sky holds its peace.
-            if (TryReadIgniter() != 0) return;
+            // Older FireFront only: its igniter is one global captured ONCE, so a bolt fire
+            // would be billed to whoever lit the fire already burning. While an attributed fire
+            // burns, the sky holds its peace. With per-fire igniters (1.0.2+) a bolt's fire is
+            // igniter 0 by construction and blames nobody, so no hold is needed.
+            if (!_perFire && TryReadIgniter() != 0) return;
 
             ZNet znet = ZNet.instance;
             if (znet == null) return;
@@ -412,12 +442,38 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                     }
                 }
 
+                if (!_collectWithIgnitersResolved)
+                {
+                    // Optional (FireFront 1.0.2+). The type is fixed for the process, so one look
+                    // settles it either way.
+                    _collectWithIgnitersResolved = true;
+                    _collectWithIgnitersMethod = _collectMethod.DeclaringType.GetMethod(
+                        "CollectActiveFiresWithIgniters", BindingFlags.Public | BindingFlags.Instance,
+                        null, new[] { typeof(List<Vector3>), typeof(List<long>) }, null);
+                    RagnaroksWrath.Log.LogInfo(_collectWithIgnitersMethod != null
+                        ? $"[{Name}] FireFront names each fire's igniter - arson is blamed per fire."
+                        : $"[{Name}] FireFront has no per-fire igniter (1.0.1 or older) - arson is " +
+                          "blamed on its single igniter, only where that fire has spread.");
+                }
+
                 object instance = _instanceProperty.GetValue(null);
                 if (instance == null) return false;   // FireManager not awake yet; normal early on
 
                 _firePositions.Clear();
-                _collectArgs[0] = _firePositions;
-                _collectMethod.Invoke(instance, _collectArgs);
+                _fireIgniters.Clear();
+                if (_collectWithIgnitersMethod != null)
+                {
+                    _collectWithIgnitersArgs[0] = _firePositions;
+                    _collectWithIgnitersArgs[1] = _fireIgniters;
+                    _collectWithIgnitersMethod.Invoke(instance, _collectWithIgnitersArgs);
+                    _perFire = true;
+                }
+                else
+                {
+                    _collectArgs[0] = _firePositions;
+                    _collectMethod.Invoke(instance, _collectArgs);
+                    _perFire = false;
+                }
                 return true;
             }
             catch (Exception ex)

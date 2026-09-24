@@ -89,6 +89,7 @@ namespace RavenIron.RagnaroksWrath.Systems
             if (characters == null) return;
 
             bool winter = SeasonSystem.Current == Season.Winter;
+            if (!winter) _winterSeconds.Clear();   // each winter's clock starts from zero, online or not
             float plagueThreshold = ModConfig.PlagueSpreadThreshold.Value;
 
             _seenThisTick.Clear();
@@ -124,14 +125,8 @@ namespace RavenIron.RagnaroksWrath.Systems
                         Persistence.Get(ZoneKey.FromWorldPos(pos)).Plague >= plagueThreshold))
                     earned = Plaguewalker;
 
-                float winterSeconds = 0f;
-                if (winter)
-                {
-                    _winterSeconds.TryGetValue(playerId, out winterSeconds);
-                    winterSeconds += deltaSeconds;
-                    _winterSeconds[playerId] = winterSeconds;
-                }
-                // Once per winter: re-arms when the season turns.
+                float winterSeconds = TitleEdge.WinterSeconds(_winterSeconds, playerId, winter, deltaSeconds);
+                // Once per winter: re-arms when the season turns, and the clock restarts with it.
                 if (TitleEdge.Rises(_winterbornHeld, playerId,
                         winter && winterSeconds >= ModConfig.WinterbornSeconds.Value))
                     earned = Winterborn;
