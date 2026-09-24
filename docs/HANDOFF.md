@@ -34,7 +34,7 @@ adversarial reviews.
 - **The docs check corrected the docs, and one constant.** `IsRainingAt` arrived in FireFront **0.21.0**, not
   0.20.3 (`RainFireFrontVersion`, the boot warning and every doc); 45 settings, not 25, are read on each
   player's own game (every Consequence setting among them); wind feeds nothing at all now; `.v0.bak`
-  means "before 0.27.2". These landed after PR #10 merged, in the docs PR.
+  means "last written by 0.27.0 or earlier" (the stamp arrived in 0.27.1, which was never uploaded). These landed after PR #10 merged, in the docs PR.
 - **Tests: 477/477** (0.28.0's 440 plus PR #9's). apiprobe: **110 of 110** surfaces resolve against the
   1.0.15 server assemblies.
 - **Storm10**: stopped, left on the 0.28.0 build with FireFront 1.0.2 and its PRODUCTION storm settings,

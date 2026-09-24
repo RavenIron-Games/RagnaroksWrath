@@ -4,7 +4,7 @@
   "MaxCreditSeconds": "Applies to every kind of drift this mod tracks per zone - plague, fire scorch, corruption and the rest - each time a zone goes from unvisited to visited.",
   "VerboseLogging": "",
   "AutosaveIntervalSeconds": "Writing is skipped whenever nothing has actually changed, so a short interval costs nothing extra on a quiet server.",
-  "MessageMinIntervalSeconds": "This is one shared timer for the whole server, not one per player, so two different players' events happening close together can still compete for the same slot and the later message can be skipped.",
+  "MessageMinIntervalSeconds": "Each player has their own timer, so one player's messages never hold back another's. A message to the same player sooner than this after their last one is dropped, not delayed.",
   "SeasonLengthDays": "",
   "SeasonIntervalSeconds": "",
   "AnnounceSeasonChange": "",
