@@ -32,7 +32,7 @@ the order they were added. It is now two files:
 
 **Upgrading.** The first start of 0.28.0 moves every setting to its new place with its value. It
 keeps the old file beside the new ones as `com.raveniron.ragnarokswrath.cfg.v1.bak` (`.v0.bak` if
-it was last written by a version before 0.27.2, the first to stamp its layout), and logs one line
+it was last written by 0.27.0 or earlier, before config files recorded a layout version), and logs one line
 naming what moved and what was removed. `wrath status` shows
 the layout version the files are at. **Going back to an older version? Restore that backup first.**
 An older version cannot read the new layout and would start from its defaults.

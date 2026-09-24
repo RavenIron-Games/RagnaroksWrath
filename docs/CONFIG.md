@@ -15,7 +15,7 @@ The visual effects (plague fog, frost breath, scorch ash, relic runes) are the o
 
 ### Upgrading from 0.27.x or older
 
-The first start of 0.28.0 moves every setting into this layout and keeps its value. The old single file is backed up beside the new one as `com.raveniron.ragnarokswrath.cfg.v1.bak` (`.v0.bak` if it was last written by a version before 0.27.2, the first to stamp its layout), and the log says what moved. Two settings that never did anything are removed: `StormFireRiskMultiplier` and `StormWindMultiplier`. `wrath status` shows which layout version the files are at.
+The first start of 0.28.0 moves every setting into this layout and keeps its value. The old single file is backed up beside the new one as `com.raveniron.ragnarokswrath.cfg.v1.bak` (`.v0.bak` if it was last written by 0.27.0 or earlier, before config files recorded a layout version), and the log says what moved. Two settings that never did anything are removed: `StormFireRiskMultiplier` and `StormWindMultiplier`. `wrath status` shows which layout version the files are at.
 
 If you ever go back to an older version of the mod, restore that backup first: older versions cannot read the new layout and would start from their defaults.
 
@@ -50,7 +50,7 @@ In `com.raveniron.ragnarokswrath.advanced.cfg`:
 - **`TickBudgetMs`** (number, default `2`, 0.25 to 16): Milliseconds of work this mod may do each frame, across every system combined. Raise it only if systems visibly fall behind on a server with room to spare. Work that doesn't fit in the budget carries over to the next frame rather than being skipped, so drift simply runs a little behind schedule rather than losing time. Most servers never need to change this.
 - **`MaxCreditSeconds`** (number, default `86400`, 60 to 2592000): Caps how much real time, in seconds, a zone can catch up on drift the moment someone visits it. Stops a zone left alone for months from getting months of built-up change all at once. Applies to every kind of drift this mod tracks per zone - plague, fire scorch, corruption and the rest - each time a zone goes from unvisited to visited.
 - **`AutosaveIntervalSeconds`** (number, default `120`, 0 to 3600): Seconds between writes of the world's drift data to disk. A save always happens on shutdown regardless, so this only limits how much a crash could lose. Set to 0 to turn off the periodic writes. Writing is skipped whenever nothing has actually changed, so a short interval costs nothing extra on a quiet server.
-- **`MessageMinIntervalSeconds`** (number, default `8`, 0 to 300): Minimum seconds between the on-screen messages this mod shows, so a burst of nearby events cannot spam the screen at once. Doesn't apply to server-wide announcements such as a storm arriving or a season changing. This is one shared timer for the whole server, not one per player, so two different players' events happening close together can still compete for the same slot and the later message can be skipped.
+- **`MessageMinIntervalSeconds`** (number, default `8`, 0 to 300): Minimum seconds between the on-screen messages this mod shows, so a burst of nearby events cannot spam the screen at once. Doesn't apply to server-wide announcements such as a storm arriving or a season changing. Each player has their own timer, so one player's messages never hold back another's. A message to the same player sooner than this after their last one is dropped, not delayed.
 
 ## 02 - Season
 
