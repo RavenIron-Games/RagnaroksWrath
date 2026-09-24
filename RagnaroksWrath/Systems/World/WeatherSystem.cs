@@ -45,9 +45,9 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// <summary>
         /// The dry storm's event, added 2026-09-18. A storm now rolls one of two looks per
         /// episode and the look has teeth: the wet one soaks and only the dry one can burn.
-        /// FireSystem gates on the ROLLED look — <see cref="StormIsDry"/> — and NOT on
-        /// `EnvMan.IsWet()`, because a forced sky never reaches a dedicated server and the
-        /// engine's weather there is not the storm's. See `LightningStrike.SkyAllows`.
+        /// With a sky forced, FireSystem gates on the ROLLED look — <see cref="StormIsDry"/> —
+        /// and NOT on `EnvMan.IsWet()`, because a forced sky never reaches a dedicated server
+        /// and the engine's weather there is not the storm's. See `LightningStrike.SkyAllows`.
         /// </summary>
         public const string StormDryEventName = StormLook.DryEventName;
 
@@ -351,34 +351,41 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// </summary>
         private void ReportTransition()
         {
-            // Multipliers reported at the storm's own centre, at both ends of its life. This
-            // line USED to print fire risk and wind alongside plague spread, worded as though
-            // all three drove gameplay, and it was cited as the in-game verification that
-            // they did. They did not: as of 2026-09-18 only plague spread has a consumer, and
-            // printing the other two next to it is how that went unnoticed for three weeks.
-            // An instrument that reports a number nothing acts on is not a weak instrument,
-            // it is a misleading one - so this now says which is which, and the day fire risk
-            // or wind gains a real consumer, move it up into the live half of the line.
+            // The multiplier a storm applies, reported at its own centre at both ends of its life.
+            // This line USED to print fire risk and wind alongside plague spread, worded as though
+            // all three drove gameplay, and it was cited as the in-game verification that they
+            // did. They did not: only plague spread ever had a consumer, and printing the other
+            // two next to it is how that went unnoticed for three weeks. Their settings
+            // (StormFireRiskMultiplier, StormWindMultiplier) were retired in 0.28.0 rather than
+            // left as dials that do nothing; a storm that makes fire worse is a feature to build,
+            // not a number to print.
             Vector3 probe = StormCentre;
-            float wind = WindMultiplierAt(probe);
 
             // Whose sky is this? On a dedicated server CurrentEnvironment is the SERVER'S
             // own weather, which a forced storm never overrides — reading it as "the
             // storm's sky" is what made 'Clear' look normal under a ThunderStorm all
-            // through the 2026-09-18 session. Name the owner of the value, always.
+            // through the 2026-09-18 session. Name the owner of the value, always. With no
+            // sky forced it is still not the storm's on a dedicated server: headless, EnvMan
+            // never rolls weather at all (no camera), so it reads its startup default all run
+            // unless a debug environment is forced — which vanilla's override path still honours
+            // headless: FireFront's `fireweather force Rain` made it read 'Rain' on 2026-09-24.
+            // This line said "so this IS the storm's" through 0.27.5, which was true only on a
+            // listen host.
             string skyText = ModConfig.StormsForceWeather.Value
                 ? $"clients see '{(StormIsDry ? ModConfig.StormDryEnvironment.Value : ModConfig.StormForcedEnvironment.Value)}'" +
                   $", this machine's own sky is '{CurrentEnvironment}' and is NOT the storm's"
-                : $"sky is '{CurrentEnvironment}' (no sky forced, so this IS the storm's)";
+                : "no sky forced, so the storm has the world's own weather" +
+                  (RagnaroksWrath.IsDedicated()
+                      ? $"; this server's own sky reads '{CurrentEnvironment}', but headless it never rolls " +
+                        "weather (only a sky forced by command moves it), so lightning asks FireFront whether " +
+                        "it rains where each bolt would land"
+                      : $", '{CurrentEnvironment}' where this machine's player stands");
 
             RagnaroksWrath.Log.LogInfo(
                 $"[{Name}] storm {(StormActive ? "began" : "ended")} - {(StormIsDry ? "DRY" : "wet")} " +
                 $"look, {skyText} " +
                 $"(forceWeather={ModConfig.StormsForceWeather.Value}); at the centre: " +
-                $"plagueSpread x{PlagueSpreadMultiplierAt(probe):F2} (live). " +
-                $"Reserved, consumed by nothing yet: fireRisk x{FireRiskMultiplierAt(probe):F2}, " +
-                $"wind x{wind:F2} (vanilla {WindSystem.BaseIntensity:F2} -> gameplay " +
-                $"{WindState.Combine(WindSystem.BaseIntensity, wind):F2}).");
+                $"plagueSpread x{PlagueSpreadMultiplierAt(probe):F2}.");
 
             if (!StormActive) MessageFeed.ToEveryone("The storm passes.");
         }
@@ -440,7 +447,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                     : $"[WeatherSystem] storm started at ({centre.x:F0}, {centre.z:F0}) - rolled " +
                       $"{(dry ? "dry" : "wet")}, but StormsForceWeather is off so the sky is the " +
                       "world's own and the roll changes nothing visible. Lightning follows the " +
-                      "real weather.");
+                      "world's weather where each bolt would land, as FireFront reads it.");
 
             // Report the beginning now rather than on the next tick, so the storm's end is always a
             // transition this system sees, however short the storm (see ReportTransition).
@@ -609,14 +616,6 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// <summary>True when <paramref name="position"/> is inside a running storm.</summary>
         public static bool IsStormAt(Vector3 position)
             => StormActive && StormArea.Contains(StormCentre, StormRange, position);
-
-        /// <summary>Fire risk multiplier at a position. 1.0 outside a storm.</summary>
-        public static float FireRiskMultiplierAt(Vector3 position)
-            => IsStormAt(position) ? ModConfig.StormFireRiskMultiplier.Value : 1f;
-
-        /// <summary>Wind multiplier at a position. 1.0 outside a storm.</summary>
-        public static float WindMultiplierAt(Vector3 position)
-            => IsStormAt(position) ? ModConfig.StormWindMultiplier.Value : 1f;
 
         /// <summary>Plague spread multiplier at a position. 1.0 outside a storm.</summary>
         public static float PlagueSpreadMultiplierAt(Vector3 position)

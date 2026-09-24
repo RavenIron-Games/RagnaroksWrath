@@ -30,7 +30,7 @@ namespace RagnaroksWrath.Tests
             Console.WriteLine("Ragnarok's Wrath — core tests\n");
 
             // Bind config first: ZoneClock reads MaxCreditSeconds on every call.
-            ModConfig.Bind(new ConfigFile());
+            ModConfig.Bind(new ConfigFile(), new ConfigFile());
 
             ZoneKeyTests();
             ZoneClockTests();
@@ -633,7 +633,7 @@ namespace RagnaroksWrath.Tests
             var planned = ConfigLedger.Plan(snap, 0);
             Check("an unstamped file plans the storm backfill", planned.Backfilled.Count == 1);
             Check("the backfill names the right key",
-                planned.Backfilled[0].Slot == ConfigLedger.Slot("6 - Weather", "StormDryChance"));
+                planned.Backfilled[0].Slot == ConfigLedger.Slot(ModConfig.WeatherSection, "StormDryChance"));
             Check("the backfill preserves old behaviour with 0, not the shipped 0.5",
                 planned.Backfilled[0].Value == "0");
             Check("the plan reports where it came from and where it goes",
@@ -671,7 +671,7 @@ namespace RagnaroksWrath.Tests
             string Val(ConfigLedger.MigrationPlan p, string key)
             {
                 foreach (var r in p.Relocated)
-                    if (r.Slot == ConfigLedger.Slot("6 - Weather", key)) return r.Value;
+                    if (r.Slot == ConfigLedger.Slot(ModConfig.WeatherSection, key)) return r.Value;
                 return null;
             }
 
@@ -743,6 +743,7 @@ namespace RagnaroksWrath.Tests
                 ConfigLedger.Describe(null).Contains("nothing to migrate"));
 
             ConfigMigrationEndToEndTests();
+            ConfigLayoutTests();
         }
 
         /// <summary>
@@ -772,7 +773,7 @@ namespace RagnaroksWrath.Tests
                 });
 
                 var upgraded = new ConfigFile { ConfigFilePath = path };
-                ModConfig.Bind(upgraded);
+                ModConfig.Bind(upgraded, new ConfigFile());
 
                 Check("an upgraded config keeps its storms single-sky (StormDryChance backfilled to 0)",
                     Math.Abs(ModConfig.StormDryChance.Value - 0f) < 0.0001f);
@@ -797,13 +798,13 @@ namespace RagnaroksWrath.Tests
                     "[" + ConfigLedger.MetaSection + "]",
                     ConfigLedger.VersionKey + " = " + ConfigLedger.CurrentVersion.ToString(CultureInfo.InvariantCulture),
                     "",
-                    "[6 - Weather]",
+                    "[" + ModConfig.WeatherSection + "]",
                     "StormsForceWeather = true",
                     "StormForcedEnvironment = ThunderStorm",
                     "StormDryChance = 0",
                 });
                 var second = new ConfigFile { ConfigFilePath = path };
-                ModConfig.Bind(second);
+                ModConfig.Bind(second, new ConfigFile());
                 Check("a second boot does not migrate an already-stamped file again",
                     ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
                 // The stamp alone cannot prove the short-circuit: re-planning a current file finds
@@ -821,22 +822,22 @@ namespace RagnaroksWrath.Tests
                 //      so the plan is hand-built; that is the point, because the row that
                 //      introduces one will be a release, on somebody else's config file.
                 var refusing = new ConfigFile { ConfigFilePath = Path.Combine(dir, "does_not_exist.cfg") };
-                ConfigMigration.Begin(refusing);
+                ConfigMigration.Begin(refusing, null);
                 var refusedPlan = new ConfigLedger.MigrationPlan();
                 refusedPlan.ResetToDefault.Add(ConfigLedger.Slot("Nowhere", "NoSuchKey"));
-                ConfigMigration.Apply(refusing, refusedPlan);
-                ConfigMigration.Finish(refusing, refusing.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0));
+                ConfigMigration.Apply(refusing, null, refusedPlan);
+                ConfigMigration.Finish(refusing, null, refusing.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0));
                 Check("a refused step corrects the summary `wrath status` prints, rather than leaving it claiming the step happened",
                     ConfigMigration.LastSummary.IndexOf("REFUSED", StringComparison.Ordinal) >= 0);
 
-                ConfigMigration.Begin(refusing);
-                ConfigMigration.Finish(refusing, refusing.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0));
+                ConfigMigration.Begin(refusing, null);
+                ConfigMigration.Finish(refusing, null, refusing.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0));
                 Check("and the count is per boot, so a clean migration after a refused one does not inherit its complaint",
                     ConfigMigration.LastSummary.IndexOf("REFUSED", StringComparison.Ordinal) < 0);
 
                 // A FRESH INSTALL must get the shipped default instead, or the feature ships dead.
                 var fresh = new ConfigFile { ConfigFilePath = Path.Combine(dir, "does_not_exist.cfg") };
-                ModConfig.Bind(fresh);
+                ModConfig.Bind(fresh, new ConfigFile());
                 Check("a fresh install gets the shipped StormDryChance, not the legacy value",
                     Math.Abs(ModConfig.StormDryChance.Value - 0.5f) < 0.0001f);
                 Check("a fresh install is stamped too, so it never migrates later",
@@ -860,7 +861,7 @@ namespace RagnaroksWrath.Tests
                     "StormForcedEnvironment = Eikthyr",
                 });
                 var eik = new ConfigFile { ConfigFilePath = eikPath };
-                ModConfig.Bind(eik);
+                ModConfig.Bind(eik, new ConfigFile());
 
                 Check("Storm10's owner keeps an all-dry storm after migrating",
                     Math.Abs(ModConfig.StormDryChance.Value - 1f) < 0.0001f);
@@ -882,11 +883,11 @@ namespace RagnaroksWrath.Tests
                     "[" + ConfigLedger.MetaSection + "]",
                     ConfigLedger.VersionKey + " = 7",
                     "",
-                    "[6 - Weather]",
+                    "[" + ModConfig.WeatherSection + "]",
                     "StormDryChance = 0.75",
                 });
                 var future = new ConfigFile { ConfigFilePath = futurePath };
-                ModConfig.Bind(future);
+                ModConfig.Bind(future, new ConfigFile());
                 Check("a file stamped ABOVE this build's layout keeps its own stamp rather than being dragged back",
                     ModConfig.ConfigVersion.Value == 7);
                 Check("and a newer file's values are left alone by an older build",
@@ -902,19 +903,21 @@ namespace RagnaroksWrath.Tests
                     "stormdrychance = 0.5",
                 });
                 var misCased = new ConfigFile { ConfigFilePath = misCasedPath };
-                ModConfig.Bind(misCased);
+                ModConfig.Bind(misCased, new ConfigFile());
                 Check("a mis-cased line does not satisfy the backfill's absence test, so the world still keeps its one sky",
                     Math.Abs(ModConfig.StormDryChance.Value - 0f) < 0.0001f);
+                Check("and the mis-cased line, which nothing ever read, is not left behind under a section that no longer exists",
+                    !misCased.HasOrphan("6 - Weather", "stormdrychance"));
 
                 // ---- THE APPLY PATH. The shipped ledger has one rung, so the reset loop and every
                 //      failure branch had never run anywhere. Driven here with synthetic plans.
                 var live = new ConfigFile();
-                ModConfig.Bind(live);
+                ModConfig.Bind(live, new ConfigFile());
 
                 ModConfig.StormDryChance.Value = 0.9f;
                 var resetPlan = new ConfigLedger.MigrationPlan();
-                resetPlan.ResetToDefault.Add(ConfigLedger.Slot("6 - Weather", "StormDryChance"));
-                ConfigMigration.Apply(live, resetPlan);
+                resetPlan.ResetToDefault.Add(ConfigLedger.Slot(ModConfig.WeatherSection, "StormDryChance"));
+                ConfigMigration.Apply(live, null, resetPlan);
                 Check("applying a rebase puts the entry back to its SHIPPED default",
                     Math.Abs(ModConfig.StormDryChance.Value - 0.5f) < 0.0001f);
 
@@ -925,14 +928,14 @@ namespace RagnaroksWrath.Tests
                 var badPlan = new ConfigLedger.MigrationPlan();
                 badPlan.Backfilled.Add(new ConfigLedger.BackfilledSlot
                 {
-                    Slot = ConfigLedger.Slot("6 - Weather", "StormDryChance"), Value = "not-a-number", Because = "test",
+                    Slot = ConfigLedger.Slot(ModConfig.WeatherSection, "StormDryChance"), Value = "not-a-number", Because = "test",
                 });
                 RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
-                ConfigMigration.Apply(live, badPlan);
+                ConfigMigration.Apply(live, null, badPlan);
                 Check("an unparseable backfill leaves the entry alone rather than corrupting it",
                     Math.Abs(ModConfig.StormDryChance.Value - beforeBad) < 0.0001f);
                 Check("and the mod NAMES the slot it could not set, rather than stamping in silence",
-                    RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("6 - Weather::StormDryChance"));
+                    RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said(ModConfig.WeatherSection + "::StormDryChance"));
 
                 // A CLAMPED value still MOVES the entry, so a did-it-move check calls it success.
                 // StormDryChance is a 0..1 share, so 9 lands as 1 - a live world would start
@@ -940,10 +943,10 @@ namespace RagnaroksWrath.Tests
                 var clampPlan = new ConfigLedger.MigrationPlan();
                 clampPlan.Backfilled.Add(new ConfigLedger.BackfilledSlot
                 {
-                    Slot = ConfigLedger.Slot("6 - Weather", "StormDryChance"), Value = "9", Because = "test",
+                    Slot = ConfigLedger.Slot(ModConfig.WeatherSection, "StormDryChance"), Value = "9", Because = "test",
                 });
                 RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
-                ConfigMigration.Apply(live, clampPlan);
+                ConfigMigration.Apply(live, null, clampPlan);
                 Check("an out-of-range backfill is CLAMPED by the config system rather than refused",
                     Math.Abs(ModConfig.StormDryChance.Value - 1f) < 0.0001f);
                 Check("and the mod says it stored something other than what the ledger asked for",
@@ -955,20 +958,561 @@ namespace RagnaroksWrath.Tests
                 var ghostPlan = new ConfigLedger.MigrationPlan();
                 ghostPlan.ResetToDefault.Add(ConfigLedger.Slot("9 - Nope", "NoSuchKey"));
                 ghostPlan.Backfilled.Add(new ConfigLedger.BackfilledSlot { Slot = "also::missing", Value = "1", Because = "test" });
-                try { ConfigMigration.Apply(live, ghostPlan); } catch { threw = true; }
+                try { ConfigMigration.Apply(live, null, ghostPlan); } catch { threw = true; }
                 Check("a ledger row naming an unknown key warns and continues rather than throwing", !threw);
 
                 threw = false;
-                try { ConfigMigration.Apply(null, resetPlan); ConfigMigration.Apply(live, null); } catch { threw = true; }
+                try { ConfigMigration.Apply(null, null, resetPlan); ConfigMigration.Apply(live, null, null); } catch { threw = true; }
                 Check("Apply survives a null config or a null plan", !threw);
             }
             finally
             {
                 // Leave the harness's static config the way every other test expects to find it.
-                ModConfig.Bind(new ConfigFile());
+                ModConfig.Bind(new ConfigFile(), new ConfigFile());
                 try { Directory.Delete(dir, true); } catch { }
             }
         }
+
+        /// <summary>
+        /// THE TWO-FILE LAYOUT (config version 2, 0.28.0). Every setting changed section and a hundred
+        /// of them changed FILE, and BepInEx addresses a setting by section and key alone: to it a
+        /// moved key is a new setting at its shipped default and the owner's value an orphan line it
+        /// never reads again. So the one thing that must hold is that every value an owner ever set
+        /// lands where this build reads it, and that no failure part-way can lose one.
+        ///
+        /// The fixture is not hand-written. It is a config the shipped 0.27.5 build wrote on Storm10,
+        /// with that server's own custom values in it (storms every 1-3 h, forced Eikthyr sky, a
+        /// three-hour outbreak clock), so the test carries exactly the bytes an owner's file holds.
+        /// </summary>
+        private static void ConfigLayoutTests()
+        {
+            Console.WriteLine("\nConfig layout (version 2)");
+
+            string fixture = Path.Combine(AppContext.BaseDirectory, "fixtures", "written-by-0.27.5.cfg");
+            Check("the 0.27.5 fixture is present beside the harness", File.Exists(fixture));
+            if (!File.Exists(fixture)) return;
+
+            var old = ConfigLedger.ParseIni(File.ReadAllLines(fixture));
+            Check("the fixture is a version 1 file, as 0.27.5 stamps it", ConfigLedger.ReadVersion(old) == 1);
+
+            // ---- the table against the build ------------------------------------------------------
+            // Bind ModConfig into two empty files and read back every definition it binds. The move
+            // table's destinations must be EXACTLY that set: a destination nothing binds would carry
+            // a value into the void, and a bound key no move reaches would start every upgraded
+            // server at its shipped default.
+            var mainProbe = new ConfigFile();
+            var advProbe = new ConfigFile();
+            ModConfig.Bind(mainProbe, advProbe);
+            var bound = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var d in mainProbe.Keys) bound.Add(ConfigLedger.Slot(d.Section, d.Key));
+            foreach (var d in advProbe.Keys) bound.Add(ConfigLedger.AdvancedSlot(d.Section, d.Key));
+
+            var plan = ConfigLedger.Plan(old, 1);
+            var destinations = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var m in plan.Moved) destinations.Add(m.To);
+
+            bool everyDestinationBound = true;
+            foreach (string to in destinations)
+                if (!bound.Contains(to)) { everyDestinationBound = false; Console.WriteLine("      unbound destination: " + to); }
+            Check($"every one of the {destinations.Count} moved settings lands on a key this build binds", everyDestinationBound);
+
+            // A setting whose section kept its name across the renumbering ("13 - Titles") is
+            // already where this build reads it: it stays, which counts as arriving.
+            bool everyBoundReached = true;
+            int stayed = 0;
+            foreach (string b in bound)
+            {
+                if (b == ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey)) continue;
+                if (destinations.Contains(b)) continue;
+                if (old.ContainsKey(b) && !plan.Dropped.Exists(d => d.Slot == b)) { stayed++; continue; }
+                everyBoundReached = false;
+                Console.WriteLine("      bound but never carried to: " + b);
+            }
+            Check($"and every key this build binds is reached by one, or never had to move ({bound.Count - 1} bound besides the stamp, {stayed} stayed put)",
+                everyBoundReached && stayed == 1);
+
+            // Every line of the old file has a fate: carried, retired, or the stamp. Nothing is left
+            // behind under a section name the new layout no longer has.
+            var fate = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var m in plan.Moved) fate.Add(m.From);
+            foreach (var d in plan.Dropped) fate.Add(d.Slot);
+            bool everyLineHasAFate = true;
+            foreach (string slot in old.Keys)
+            {
+                if (slot == ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey)) continue;
+                if (fate.Contains(slot) || bound.Contains(slot)) continue;   // carried, dropped, or already where it is read
+                everyLineHasAFate = false;
+                Console.WriteLine("      no fate for: " + slot);
+            }
+            Check($"every one of the fixture's {old.Count - 1} settings is carried or retired, none forgotten", everyLineHasAFate);
+
+            int retired = 0;
+            foreach (var d in plan.Dropped) if (d.Because.StartsWith("retired", StringComparison.Ordinal)) retired++;
+            Check("exactly the two storm multipliers that never did anything are retired", retired == 2 &&
+                plan.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("6 - Weather", "StormFireRiskMultiplier")) &&
+                plan.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("6 - Weather", "StormWindMultiplier")));
+            Check("and neither is carried anywhere",
+                !plan.Moved.Exists(m => m.From.EndsWith("::StormFireRiskMultiplier", StringComparison.Ordinal) ||
+                                        m.From.EndsWith("::StormWindMultiplier", StringComparison.Ordinal)));
+            Check("a layout move changes where values live, not how the world behaves", !plan.ChangesBehaviour);
+
+            // BepInEx writes sections sorted by NAME. The whole point of the renumbering is that the
+            // sort now IS the intended order; a single-digit number anywhere would undo it.
+            string[] intended =
+            {
+                ModConfig.GeneralSection, ModConfig.SeasonSection, ModConfig.WeatherSection, ModConfig.BiomeSection,
+                ModConfig.FireSection, ModConfig.PlagueSection, ModConfig.EcologySection, ModConfig.FarmingSection,
+                ModConfig.HealthSection, ModConfig.ConsequenceSection, ModConfig.RivalrySection, ModConfig.RelicSection,
+                ModConfig.TitlesSection, ModConfig.WorldSection, ModConfig.VisualsSection, ConfigLedger.MetaSection,
+            };
+            var sorted = (string[])intended.Clone();
+            Array.Sort(sorted, StringComparer.CurrentCulture);
+            Check("sorting the section names as BepInEx does gives the intended order", string.Join("|", sorted) == string.Join("|", intended));
+
+            // The descriptions are what an owner reads. They were essays; pin that they stay short and
+            // free of the internal shorthand that leaked into them.
+            int longest = 0; string longestKey = "";
+            bool jargonFree = true;
+            foreach (var file in new[] { mainProbe, advProbe })
+            {
+                foreach (var d in file.Keys)
+                {
+                    var entry = (ConfigEntryBase)file[d];
+                    string text = GetDescription(entry);
+                    if (text.Length > longest) { longest = text.Length; longestKey = d.Key; }
+                    foreach (string bad in new[] { "task ", "Task ", "Phase ", "2026-", "ZDO", "RPC", "WorldTick", "EnvMan" })
+                        if (text.Contains(bad)) { jargonFree = false; Console.WriteLine("      " + d.Key + " says '" + bad + "'"); }
+                }
+            }
+            Check($"no setting's description runs past 300 characters (longest: {longestKey}, {longest})", longest <= 300);
+            Check("no description carries internal shorthand (task numbers, dates, engine class names)", jargonFree);
+            Check($"the main file holds the settings an owner changes and no more ({mainProbe.Keys.Count} keys)",
+                mainProbe.Keys.Count >= 30 && mainProbe.Keys.Count <= 50);
+
+            // ---- the whole migration, through the shipping ModConfig -----------------------------
+            string dir = Path.Combine(Path.GetTempPath(), "rw_layout_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                string mainPath = Path.Combine(dir, "com.raveniron.ragnarokswrath.cfg");
+                string advPath = Path.Combine(dir, ConfigLedger.AdvancedFileName);
+                File.Copy(fixture, mainPath);
+
+                var main = new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true };
+                var adv = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true };
+                ModConfig.Bind(main, adv);
+
+                bool everyValueLanded = true;
+                foreach (var m in plan.Moved)
+                {
+                    ConfigLedger.SplitSlot(m.To, out bool isAdv, out string section, out string key);
+                    var file = isAdv ? adv : main;
+                    string landed = file[new ConfigDefinition(section, key)].GetSerializedValue();
+                    if (!SameConfigText(m.Value, landed))
+                    {
+                        everyValueLanded = false;
+                        Console.WriteLine("      " + key + ": file held '" + m.Value + "', bound '" + landed + "'");
+                    }
+                }
+                Check("EVERY value in the owner's file is the value this build now reads", everyValueLanded);
+                Check("the owner's custom sickness tuning survived into the advanced file (0.4 and 0.5, not the shipped 0.3 and 0.38)",
+                    Math.Abs(ModConfig.SicknessStaminaRegenAtMax.Value - 0.4f) < 0.0001f &&
+                    Math.Abs(ModConfig.SicknessHealthRegenAtMax.Value - 0.5f) < 0.0001f);
+                Check("the owner's forced Eikthyr sky survived", ModConfig.StormsForceWeather.Value &&
+                    ModConfig.StormDryEnvironment.Value == "Eikthyr" && Math.Abs(ModConfig.StormDryChance.Value - 1f) < 0.0001f);
+                Check("the owner's three-hour outbreak clock survived into the main file",
+                    Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f);
+                Check("the file is stamped at version 2", ModConfig.ConfigVersion.Value == 2);
+
+                var mainAfter = ConfigLedger.ParseIni(File.ReadAllLines(mainPath));
+                var advAfter = ConfigLedger.ParseIni(File.ReadAllLines(advPath));
+                bool noOldSection = true;
+                foreach (string slot in mainAfter.Keys)
+                    if (!slot.StartsWith("0", StringComparison.Ordinal) && !slot.StartsWith("1", StringComparison.Ordinal) &&
+                        !slot.StartsWith(ConfigLedger.MetaSection + "::", StringComparison.Ordinal)) noOldSection = false;
+                foreach (string slot in old.Keys)
+                {
+                    // "13 - Titles" is a section name in BOTH layouts, so a line there that never
+                    // moved is exactly where it belongs.
+                    ConfigLedger.SplitSlot(slot, out _, out string section, out _);
+                    if (section == ModConfig.TitlesSection) continue;
+                    if (mainAfter.ContainsKey(slot) && slot != ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey))
+                        noOldSection = false;
+                }
+                Check("the main file written to disk holds no old-layout line at all", noOldSection);
+                Check("the retired settings are gone from the file, not just unbound",
+                    !mainAfter.ContainsKey(ConfigLedger.Slot("6 - Weather", "StormWindMultiplier")));
+                Check("the written main file carries the version 2 stamp",
+                    mainAfter.TryGetValue(ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), out string stamp) && stamp == "2");
+                Check($"the advanced file was written with its settings ({advAfter.Count})", advAfter.Count >= 90);
+                Check("the owner's tuning landed in the advanced file on disk (SicknessHealthRegenAtMax, FarmingCropPrefabs)",
+                    advAfter.TryGetValue(ConfigLedger.Slot(ModConfig.HealthSection, "SicknessHealthRegenAtMax"), out string regen) &&
+                    SameConfigText("0.5", regen) &&
+                    advAfter.TryGetValue(ConfigLedger.Slot(ModConfig.FarmingSection, "FarmingCropPrefabs"), out string crops) &&
+                    crops == old[ConfigLedger.Slot("12 - Farming", "FarmingCropPrefabs")]);
+                Check("a backup of the version 1 file was written beside it", File.Exists(mainPath + ".v1.bak"));
+                Check("BepInEx's save-on-change is handed back on after the migration",
+                    main.SaveOnConfigSet && adv.SaveOnConfigSet);
+
+                // The second boot reads what the first one wrote, and must find nothing to do.
+                var main2 = new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true };
+                var adv2 = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true };
+                ModConfig.Bind(main2, adv2);
+                Check("the next boot finds a current file and migrates nothing", ConfigMigration.LastSummary == "");
+                Check("and reads the same values back from the two files",
+                    Math.Abs(ModConfig.SicknessStaminaRegenAtMax.Value - 0.4f) < 0.0001f &&
+                    Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f &&
+                    ModConfig.StormDryEnvironment.Value == "Eikthyr");
+
+                // ---- A LOCKED ADVANCED FILE. Its save fails, so nothing may be dropped and nothing
+                //      stamped: the main file must still hold every old line for the next boot.
+                File.Copy(fixture, mainPath, true);
+                File.Delete(advPath);
+                byte[] beforeA = File.ReadAllBytes(mainPath);
+                var mainA = new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true };
+                var advA = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true, ThrowOnSave = true };
+                ModConfig.Bind(mainA, advA);
+                var mainAfterA = ConfigLedger.ParseIni(File.ReadAllLines(mainPath));
+                Check("when the advanced file cannot be saved, the version is NOT stamped",
+                    mainAfterA.TryGetValue(ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), out string stampA) && stampA == "1");
+                Check("and every old line is still in the main file for the next boot to carry",
+                    mainAfterA.ContainsKey(ConfigLedger.Slot("1 - Core", "TickBudgetMs")) &&
+                    mainAfterA.ContainsKey(ConfigLedger.Slot("9 - Plague", "PlagueGenesisMeanHours")));
+                Check("while this boot still runs on the owner's values",
+                    Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f);
+                Check("and the main file is not saved at all, so no setting is written in both its old and new place",
+                    BytesMatch(mainPath, beforeA));
+
+                var mainA2 = new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true };
+                var advA2 = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true };
+                ModConfig.Bind(mainA2, advA2);
+                Check("the next boot, with the file free, finishes the migration and stamps it",
+                    ModConfig.ConfigVersion.Value == 2 &&
+                    ConfigLedger.ParseIni(File.ReadAllLines(mainPath)).ContainsKey(ConfigLedger.Slot(ModConfig.WeatherSection, "StormsForceWeather")));
+                Check("with the owner's tuning in the advanced file",
+                    SameConfigText("0.5",
+                        ConfigLedger.ParseIni(File.ReadAllLines(advPath))[ConfigLedger.Slot(ModConfig.HealthSection, "SicknessHealthRegenAtMax")]));
+
+                // ---- A LOCKED MAIN FILE. The advanced file is saved first, the main one fails: the
+                //      main file on disk must be exactly as it was, and the retry must converge.
+                File.Copy(fixture, mainPath, true);
+                File.Delete(advPath);
+                byte[] before = File.ReadAllBytes(mainPath);
+                var mainB = new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true, ThrowOnSave = true };
+                var advB = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true };
+                ModConfig.Bind(mainB, advB);
+                byte[] after = File.ReadAllBytes(mainPath);
+                bool untouched = before.Length == after.Length;
+                for (int i = 0; untouched && i < before.Length; i++) untouched = before[i] == after[i];
+                Check("when the main file cannot be saved, it is left byte-for-byte as it was", untouched);
+
+                var mainB2 = new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true };
+                var advB2 = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true };
+                ModConfig.Bind(mainB2, advB2);
+                Check("and the retry converges on the same result as a clean run",
+                    ModConfig.ConfigVersion.Value == 2 &&
+                    Math.Abs(ModConfig.SicknessStaminaRegenAtMax.Value - 0.4f) < 0.0001f &&
+                    Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f);
+
+                // ---- A SAVE THAT FAILS PART-WAY. BepInEx opens the file with append:false, which
+                //      empties it, so a disk that fills mid-save leaves it truncated. The engine keeps
+                //      the bytes and puts them back. (The locked-file tests above cannot see this:
+                //      their save fails before anything is written.)
+                File.Copy(fixture, mainPath, true);
+                File.Delete(advPath);
+                byte[] beforeTorn = File.ReadAllBytes(mainPath);
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true, ThrowMidSave = true },
+                               new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true });
+                Check("a main save that fails part-way leaves the file put back byte-for-byte, not truncated",
+                    BytesMatch(mainPath, beforeTorn) && RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("put back exactly as it was"));
+                Check("and wrath status says the migration runs again", ConfigMigration.LastSummary.Contains("could not be saved"));
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true });
+                Check("and the retry converges, finding every setting already in its new place with the same value",
+                    ModConfig.ConfigVersion.Value == 2 &&
+                    Math.Abs(ModConfig.SicknessStaminaRegenAtMax.Value - 0.4f) < 0.0001f &&
+                    Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f &&
+                    !RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("in the new layout and") && !RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("at its shipped default"));
+
+                File.Copy(fixture, mainPath, true);
+                File.Delete(advPath);
+                byte[] beforeTornAdv = File.ReadAllBytes(mainPath);
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true, ThrowMidSave = true });
+                Check("an advanced save that fails part-way on a first migration leaves no half-written advanced file",
+                    !File.Exists(advPath));
+                Check("and the main file, never saved, is byte-for-byte as it was", BytesMatch(mainPath, beforeTornAdv));
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true });
+                Check("and the retry converges", ModConfig.ConfigVersion.Value == 2 && File.Exists(advPath) &&
+                    Math.Abs(ModConfig.SicknessHealthRegenAtMax.Value - 0.5f) < 0.0001f);
+
+                File.Copy(fixture, mainPath, true);                 // an interrupted run: advanced saved, main not
+                byte[] beforeAdvKept = File.ReadAllBytes(advPath);
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true, ThrowMidSave = true });
+                Check("an advanced file that already existed is put back byte-for-byte when its save fails part-way",
+                    BytesMatch(advPath, beforeAdvKept));
+
+                // ---- A SETTING IN BOTH PLACES. An interrupted run saved the advanced file and never
+                //      stamped the main one; since then the new place was edited, by hand or through a
+                //      config manager, and is what the mod has been reading. The review reproduced the
+                //      old line silently reverting that edit.
+                string cMain = Path.Combine(dir, "conflict.cfg");
+                string cAdv = Path.Combine(dir, "conflict.advanced.cfg");
+                File.WriteAllLines(cMain, new[] { "[1 - Core]", "TickBudgetMs = 5", "", "[9 - Plague]", "PlagueGenesisMeanHours = 3", "", "[Meta]", "ConfigVersion = 1" });
+                File.WriteAllLines(cAdv, new[] { "[01 - General]", "TickBudgetMs = 8" });
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = cMain, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = cAdv, WriteOnSave = true });
+                Check("a value edited in the NEW place since an interrupted run is kept, not reverted by the old line",
+                    Math.Abs(ModConfig.TickBudgetMs.Value - 8f) < 0.0001f && SameConfigText("8",
+                        ConfigLedger.ParseIni(File.ReadAllLines(cAdv))[ConfigLedger.Slot(ModConfig.GeneralSection, "TickBudgetMs")]));
+                Check("and the log names both values", RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("= '8' in the new layout") && RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("= '5' in the old one"));
+                Check("and wrath status says a value was kept", ConfigMigration.LastSummary.Contains("already had a different value"));
+                Check("while the rest still migrates: the old line is gone, a plain carry landed, the stamp is 2",
+                    !ConfigLedger.ParseIni(File.ReadAllLines(cMain)).ContainsKey(ConfigLedger.Slot("1 - Core", "TickBudgetMs")) &&
+                    Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f && ModConfig.ConfigVersion.Value == 2);
+
+                File.WriteAllLines(cMain, new[] { "[1 - Core]", "TickBudgetMs = 5", "", "[Meta]", "ConfigVersion = 1" });
+                File.WriteAllLines(cAdv, new[] { "[01 - General]", "TickBudgetMs = 2" });
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = cMain, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = cAdv, WriteOnSave = true });
+                Check("a new place holding only the shipped default does not beat the owner's old value",
+                    Math.Abs(ModConfig.TickBudgetMs.Value - 5f) < 0.0001f && RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("at its shipped default") &&
+                    !ConfigMigration.LastSummary.Contains("already had a different value"));
+
+                File.WriteAllLines(cMain, new[] { "[1 - Core]", "TickBudgetMs = 5", "", "[Meta]", "ConfigVersion = 1" });
+                File.WriteAllLines(cAdv, new[] { "[01 - General]", "TickBudgetMs = 5.0" });
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = cMain, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = cAdv, WriteOnSave = true });
+                Check("the same value in both places, however it is spelled, is simply carried with nothing to report",
+                    Math.Abs(ModConfig.TickBudgetMs.Value - 5f) < 0.0001f &&
+                    !RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("in the new layout and") && !RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("at its shipped default"));
+
+                // ---- A FILE THE MIGRATION CANNOT READ. BepInEx has already read it (its ConfigFile
+                //      loads in the constructor), then something takes it without sharing. Since
+                //      0.28.0 renamed every section, a boot that cannot plan binds almost nothing, so
+                //      it must write NOTHING and say so, rather than save defaults over the old lines.
+                File.Copy(fixture, mainPath, true);
+                File.Delete(advPath);
+                byte[] beforeLocked = File.ReadAllBytes(mainPath);
+                var mainL = new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true };
+                var advL = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true };
+                mainL.HasOrphan("-", "-");   // load it now, as BepInEx's constructor does
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                using (new FileStream(mainPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                    ModConfig.Bind(mainL, advL);
+                Check("a config the migration cannot read is not written at all: main byte-for-byte, no advanced file",
+                    BytesMatch(mainPath, beforeLocked) && !File.Exists(advPath));
+                Check("and the failure is said out loud, in the log and in wrath status",
+                    RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("could not read your config file") && ConfigMigration.LastSummary.Contains("FAILED"));
+                Check("and BepInEx's save-on-change is still handed back", mainL.SaveOnConfigSet && advL.SaveOnConfigSet);
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true });
+                Check("and the next boot, able to read it, migrates it properly",
+                    ModConfig.ConfigVersion.Value == 2 && Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f);
+
+                // ---- The backup note is judged per file: the main file's backup is the one an owner
+                //      restores, and an advanced-file failure must not make the note deny it exists.
+                File.Copy(fixture, mainPath, true);
+                File.WriteAllLines(advPath, new[] { "[01 - General]", "TickBudgetMs = 2" });
+                foreach (string bak in Directory.GetFiles(dir, "*.bak")) File.Delete(bak);
+                Directory.CreateDirectory(advPath + ".v1.bak");    // a backup that cannot be written
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
+                               new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true });
+                Check("the note names the main file's backup even when the advanced file's could not be written",
+                    File.Exists(mainPath + ".v1.bak") &&
+                    RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("backed up beside it as .v1.bak; the advanced file's own backup could not be written") &&
+                    !RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("no backup of the config file"));
+                Directory.Delete(advPath + ".v1.bak");
+
+                // ---- EVERY SETTING, NON-DEFAULT. Most of the fixture's values equal their defaults,
+                //      and a carry that silently failed on one of those would be invisible - the key
+                //      would bind at the default it already held. So build an old-layout file in which
+                //      every carried setting holds a value its default is not, and check each one.
+                var chosen = new Dictionary<string, string>(StringComparer.Ordinal);   // destination -> text
+                var synthetic = new List<string>();
+                string lastSection = null;
+                var byFrom = new List<ConfigLedger.MovedSlot>(plan.Moved);
+                byFrom.Sort((a, b) => string.CompareOrdinal(a.From, b.From));
+                foreach (var m in byFrom)
+                {
+                    ConfigLedger.SplitSlot(m.From, out _, out string fromSection, out string key);
+                    ConfigLedger.SplitSlot(m.To, out bool toAdv, out string toSection, out _);
+                    var probeEntry = (ConfigEntryBase)(toAdv ? advProbe : mainProbe)[new ConfigDefinition(toSection, key)];
+                    string text = NotTheDefault(probeEntry);
+                    chosen[m.To] = text;
+                    if (fromSection != lastSection) { synthetic.Add("[" + fromSection + "]"); lastSection = fromSection; }
+                    synthetic.Add(key + " = " + text);
+                }
+                synthetic.Add("[" + ConfigLedger.MetaSection + "]");
+                synthetic.Add(ConfigLedger.VersionKey + " = 1");
+                string synthPath = Path.Combine(dir, "every-setting.cfg");
+                File.WriteAllLines(synthPath, synthetic);
+                var synthMain = new ConfigFile { ConfigFilePath = synthPath, WriteOnSave = true };
+                var synthAdv = new ConfigFile { ConfigFilePath = Path.Combine(dir, "every-setting.advanced.cfg"), WriteOnSave = true };
+                ModConfig.Bind(synthMain, synthAdv);
+                int arrived = 0;
+                foreach (var kv in chosen)
+                {
+                    ConfigLedger.SplitSlot(kv.Key, out bool toAdv, out string section, out string key);
+                    string landed = (toAdv ? synthAdv : synthMain)[new ConfigDefinition(section, key)].GetSerializedValue();
+                    if (SameConfigText(kv.Value, landed)) arrived++;
+                    else Console.WriteLine("      " + key + ": wrote '" + kv.Value + "', bound '" + landed + "'");
+                }
+                Check($"all {chosen.Count} settings, each set to a value its default is not, arrive intact ({arrived})",
+                    arrived == chosen.Count && chosen.Count == plan.Moved.Count);
+
+                // ---- A version 0 file two rungs behind: the 0.27.1 storm relocation must land in the
+                //      version 2 sections, and must beat the plain carry of the same key.
+                string v0Path = Path.Combine(dir, "v0.cfg");
+                File.WriteAllLines(v0Path, new[]
+                {
+                    "[6 - Weather]",
+                    "StormsForceWeather = true",
+                    "StormForcedEnvironment = Eikthyr",
+                    "StormRangeMeters = 128",
+                    "",
+                    "[4 - Systems]",
+                    "EnableWind = false",
+                });
+                var v0 = new ConfigFile { ConfigFilePath = v0Path, WriteOnSave = true };
+                var v0adv = new ConfigFile { ConfigFilePath = Path.Combine(dir, "v0.advanced.cfg"), WriteOnSave = true };
+                ModConfig.Bind(v0, v0adv);
+                Check("a version 0 Eikthyr owner still gets an all-dry Eikthyr storm after both rungs",
+                    ModConfig.StormDryEnvironment.Value == "Eikthyr" &&
+                    ModConfig.StormForcedEnvironment.Value == ConfigLedger.WetEnvironmentDefault &&
+                    Math.Abs(ModConfig.StormDryChance.Value - 1f) < 0.0001f);
+                Check("their storm range was carried into the advanced file",
+                    Math.Abs(ModConfig.StormRangeMeters.Value - 128f) < 0.001f);
+                Check("and their wind switch, which moved section AND file, kept its value", !ModConfig.EnableWind.Value);
+                Check("the file ends at version 2", ModConfig.ConfigVersion.Value == 2);
+
+                // ---- Pieces of the plan, on hand-built snapshots.
+                var leftover = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    { ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), "1" },
+                    { ConfigLedger.Slot("6 - Weather", "StormDurationSeconds"), "900" },
+                    { ConfigLedger.Slot(ModConfig.WeatherSection, "StormDurationSeconds"), "300" },
+                    { ConfigLedger.Slot("6 - Weather", "SomethingNobodyBinds"), "1" },
+                    { ConfigLedger.Slot(ModConfig.WeatherSection, "SomethingElse"), "1" },
+                    { ConfigLedger.AdvancedSlot(ModConfig.WeatherSection, "StormRangeMeters"), "200" },
+                };
+                var p2 = ConfigLedger.Plan(leftover, 1);
+                Check("while an old line still exists it is the owner's value, and wins over a half-finished run's default",
+                    p2.Moved.Exists(m => m.To == ConfigLedger.Slot(ModConfig.WeatherSection, "StormDurationSeconds") && m.Value == "900"));
+                Check("and the planner hands the engine what the new place already held, so it can judge the two",
+                    p2.Moved.Exists(m => m.To == ConfigLedger.Slot(ModConfig.WeatherSection, "StormDurationSeconds") && m.AlreadyThere == "300") &&
+                    !plan.Moved.Exists(m => m.AlreadyThere != null));
+                Check("a stray line under an emptied section is removed and named",
+                    p2.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("6 - Weather", "SomethingNobodyBinds") && d.Because == "nothing reads it") &&
+                    ConfigLedger.Describe(p2).Contains("SomethingNobodyBinds"));
+                Check("a stray line under a CURRENT section is left alone - it is not ours to judge",
+                    !p2.Dropped.Exists(d => d.Slot.EndsWith("::SomethingElse", StringComparison.Ordinal)));
+                Check("a line already in the advanced file is never moved or dropped",
+                    !p2.Moved.Exists(m => m.From.StartsWith(ConfigLedger.AdvancedPrefix, StringComparison.Ordinal)) &&
+                    !p2.Dropped.Exists(d => d.Slot.StartsWith(ConfigLedger.AdvancedPrefix, StringComparison.Ordinal)));
+
+                // ---- A SECTION NAME BOTH LAYOUTS SHARE. "13 - Titles" was version 1's and is version
+                //      2's, and the sweep of emptied sections once ate what the rung had just carried
+                //      into it. Values chosen unlike their defaults, so a lost carry cannot hide.
+                var shared = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    { ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), "1" },
+                    { ConfigLedger.Slot("13 - Titles", "AnnounceTitles"), "false" },
+                    { ConfigLedger.Slot("4 - Systems", "EnableTitle"), "false" },
+                };
+                var p3 = ConfigLedger.Plan(shared, 1);
+                Check("a setting that never left a surviving section is neither carried nor dropped",
+                    !p3.Moved.Exists(m => m.From.EndsWith("::AnnounceTitles", StringComparison.Ordinal)) &&
+                    !p3.Dropped.Exists(d => d.Slot.EndsWith("::AnnounceTitles", StringComparison.Ordinal)));
+                Check("a setting carried INTO a surviving section stays carried",
+                    p3.Moved.Exists(m => m.To == ConfigLedger.Slot(ModConfig.TitlesSection, "EnableTitle") && m.Value == "false"));
+                string sharedPath = Path.Combine(dir, "shared.cfg");
+                File.WriteAllLines(sharedPath, new[]
+                {
+                    "[Meta]", "ConfigVersion = 1", "", "[13 - Titles]", "AnnounceTitles = false", "", "[4 - Systems]", "EnableTitle = false",
+                });
+                var sharedMain = new ConfigFile { ConfigFilePath = sharedPath, WriteOnSave = true };
+                ModConfig.Bind(sharedMain, new ConfigFile());
+                Check("and end to end both keep the owner's value", !ModConfig.AnnounceTitles.Value && !ModConfig.EnableTitle.Value);
+
+                // ---- Drop's guard: a line this build still binds is never removed.
+                var guarded = new ConfigFile();
+                var guardedAdv = new ConfigFile();
+                ModConfig.Bind(guarded, guardedAdv);
+                var badDrop = new ConfigLedger.MigrationPlan();
+                badDrop.Dropped.Add(new ConfigLedger.DroppedSlot { Slot = ConfigLedger.Slot(ModConfig.WeatherSection, "StormsForceWeather"), Because = "test" });
+                RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Clear();
+                ConfigMigration.Drop(guarded, guardedAdv, badDrop);
+                Check("a drop naming a key this build still reads is refused, and the setting stays bound",
+                    guarded.ContainsKey(new ConfigDefinition(ModConfig.WeatherSection, "StormsForceWeather")) &&
+                    RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("still reads that setting"));
+            }
+            finally
+            {
+                ModConfig.Bind(new ConfigFile(), new ConfigFile());
+                try { Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// Text for a setting that its default is not, and that its allowed range will not clamp: a
+        /// bool flipped, a number moved to whichever end of its range the default is not at, a string
+        /// changed. InvariantCulture, and lower-case bools, as BepInEx writes them.
+        /// </summary>
+        private static string NotTheDefault(ConfigEntryBase entry)
+        {
+            object def = entry.DefaultValue;
+            object range = ((ConfigDescription)entry.GetType().GetProperty("Description").GetValue(entry))?.AcceptableValues;
+            object min = range?.GetType().GetField("MinValue").GetValue(range);
+            object max = range?.GetType().GetField("MaxValue").GetValue(range);
+
+            switch (def)
+            {
+                case bool b: return b ? "false" : "true";
+                case int i:
+                    if (range == null) return (i + 1).ToString(CultureInfo.InvariantCulture);
+                    return ((int)max != i ? (int)max : (int)min).ToString(CultureInfo.InvariantCulture);
+                case float f:
+                    if (range == null) return (f + 1f).ToString(CultureInfo.InvariantCulture);
+                    return (Math.Abs((float)max - f) > 1e-6f ? (float)max : (float)min).ToString(CultureInfo.InvariantCulture);
+                case string str: return str + "_moved";
+                default: return Convert.ToString(def, CultureInfo.InvariantCulture);
+            }
+        }
+
+        /// <summary>Config text compared the way the migration compares it: numbers as numbers, the rest ignoring case.</summary>
+        private static bool BytesMatch(string path, byte[] expected)
+        {
+            byte[] actual = File.ReadAllBytes(path);
+            if (actual.Length != expected.Length) return false;
+            for (int i = 0; i < actual.Length; i++) if (actual[i] != expected[i]) return false;
+            return true;
+        }
+
+        private static bool SameConfigText(string a, string b)
+        {
+            if (a == null || b == null) return false;
+            if (double.TryParse(a.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double x) &&
+                double.TryParse(b.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double y))
+                return Math.Abs(x - y) <= 1e-6 * Math.Max(1.0, Math.Abs(x));
+            return string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetDescription(ConfigEntryBase entry)
+        {
+            var property = entry.GetType().GetProperty("Description");
+            var description = property?.GetValue(entry) as ConfigDescription;
+            return description?.Description ?? "";
+        }
+
 
         // ---- StormLook --------------------------------------------------------------
 
@@ -2228,30 +2772,44 @@ namespace RagnaroksWrath.Tests
             // in BOTH of that session's wet storms, while the connected client showed the
             // vanilla `Wet` status and visible rain. This first case is that exact scenario
             // and it fails against the old `if (EnvMan.IsWet()) return;`.
-            Check("a forced WET sky refuses a bolt even when this machine sees no rain",
-                !LightningStrike.SkyAllows(forcedSky: true, stormIsDry: false, envIsWet: false));
+            Check("a forced WET sky refuses a bolt even where no rain is read",
+                !LightningStrike.SkyAllows(forcedSky: true, stormIsDry: false, rainingWhereItLands: false));
             Check("a forced DRY sky allows a bolt",
-                LightningStrike.SkyAllows(forcedSky: true, stormIsDry: true, envIsWet: false));
+                LightningStrike.SkyAllows(forcedSky: true, stormIsDry: true, rainingWhereItLands: false));
 
-            // With a sky forced, the engine's own weather is not the storm anyone is standing
+            // With a sky forced, the world's own weather is not the storm anyone is standing
             // in, so it must not get a vote in EITHER direction. The second of these is the
             // silent half of the same bug: a dry storm that never strikes because the SERVER
             // happened to be rained on looks exactly like lightning simply not rolling.
-            Check("a forced WET sky still refuses when this machine also sees rain",
-                !LightningStrike.SkyAllows(forcedSky: true, stormIsDry: false, envIsWet: true));
-            Check("a forced DRY sky still allows when this machine's own sky is wet",
-                LightningStrike.SkyAllows(forcedSky: true, stormIsDry: true, envIsWet: true));
+            Check("a forced WET sky still refuses where rain is read too",
+                !LightningStrike.SkyAllows(forcedSky: true, stormIsDry: false, rainingWhereItLands: true));
+            Check("a forced DRY sky still allows where rain is read",
+                LightningStrike.SkyAllows(forcedSky: true, stormIsDry: true, rainingWhereItLands: true));
+            Check("a forced sky needs no rain read at all",
+                LightningStrike.SkyAllows(forcedSky: true, stormIsDry: true, rainingWhereItLands: null) &&
+                !LightningStrike.SkyAllows(forcedSky: true, stormIsDry: false, rainingWhereItLands: null));
 
-            // No forced sky: the storm imposes nothing, the world's real weather is the truth,
-            // and the rolled look changes nothing anyone can see. Unchanged behaviour, pinned
-            // so the fix above cannot quietly take the vote away from real rain.
-            Check("with no forced sky, real rain refuses a bolt",
-                !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: true, envIsWet: true));
-            Check("with no forced sky, dry weather allows a bolt",
-                LightningStrike.SkyAllows(forcedSky: false, stormIsDry: true, envIsWet: false));
-            Check("with no forced sky, the rolled look does not decide — real rain does",
-                !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, envIsWet: true) &&
-                 LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, envIsWet: false));
+            // No forced sky: the storm imposes nothing, the world's own weather at the landing
+            // spot is the truth, and the rolled look changes nothing anyone can see. Through
+            // 0.27.5 FireSystem read that weather from EnvMan.IsWet(), which a dedicated server
+            // never updates (no camera, so no weather roll): Clear, dry, for the whole run. It
+            // now asks FireFront (FireSystem.TryReadRainAt). The harness cannot reach that read:
+            // it pins the verdict, and only an in-game run can show the read resolves and answers.
+            Check("with no forced sky, rain where the bolt would land refuses it",
+                !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: true, rainingWhereItLands: true));
+            Check("with no forced sky, dry weather there allows it",
+                LightningStrike.SkyAllows(forcedSky: false, stormIsDry: true, rainingWhereItLands: false));
+            Check("with no forced sky, the rolled look does not decide — rain there does",
+                !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, rainingWhereItLands: true) &&
+                 LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, rainingWhereItLands: false));
+
+            // An answer that cannot be had is not a dry sky. A FireFront older than 0.20.3 has
+            // no rain read and a reflected call can throw; either way the bolt is withheld,
+            // never risked, which is the homestead standoff's fail-closed rule. A gate written
+            // as `rainingWhereItLands != true` passes every case above and fails this one.
+            Check("with no forced sky, a rain read that cannot answer withholds the bolt",
+                !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: true, rainingWhereItLands: null) &&
+                !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, rainingWhereItLands: null));
 
             // 10s tick, 15min mean: chance = 10 / 900.
             Check("the per-tick chance matches the configured mean",

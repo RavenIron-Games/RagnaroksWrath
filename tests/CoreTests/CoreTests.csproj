@@ -62,4 +62,9 @@
     <Compile Include="..\..\RagnaroksWrath\Config\ModConfig.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- A config file the shipped 0.27.5 build really wrote (Storm10, custom values), for the layout migration. -->
+    <None Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

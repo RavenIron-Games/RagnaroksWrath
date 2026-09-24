@@ -72,6 +72,16 @@ class Probe
         F("ZNetScene", "s_instance", AnyStatic);
         F("ZNetScene", "m_namedPrefabs", AnyInstance);
         F("EnvMan", "s_instance", AnyStatic);
+        // The weather replay behind FireFront's ValheimBridge.IsRainingAt (0.20.3+), which
+        // Ragnarok's Wrath's storm lightning also asks since 0.28.0. If one of these moves,
+        // FireFront reads every sky as dry: its own rain suppression stops, and bolts fall in
+        // rain again.
+        M("EnvMan", "GetAvailableEnvironments", AnyInstance, "BiomeSector");
+        M("EnvMan", "SelectWeightedEnvironment", AnyInstance, "List<EnvEntry>");
+        M("EnvMan", "GetEnv", AnyInstance, "System.String");
+        F("EnvMan", "m_environmentDuration", AnyInstance);
+        F("EnvMan", "m_debugEnv", AnyInstance);
+        F("EnvMan", "m_forceEnv", AnyInstance);
 
         Console.WriteLine();
         Console.WriteLine("=== Ragnarok's Wrath surfaces ===");

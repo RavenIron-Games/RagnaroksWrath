@@ -4,10 +4,21 @@ using RavenIron.RagnaroksWrath.Core;
 namespace RavenIron.RagnaroksWrath.Config
 {
     /// <summary>
-    /// Config surface. Expected to grow large — season length, contest thresholds, fire spread
-    /// rate and so on all belong here eventually.
+    /// Config surface, in TWO FILES since 0.28.0 (config layout version 2): the main file holds the
+    /// settings an owner actually changes — every system's on/off switch, storms, lightning,
+    /// outbreaks, announcements, visuals — and the advanced file beside it holds the tuning. Both use
+    /// the same numbered section names, so a system's tuning sits under the same heading in the
+    /// advanced file as its switch does in the main one. Owner-facing explanations live in
+    /// docs/CONFIG.md; the description on each setting is one or two plain sentences, and the
+    /// reasoning behind a value lives in the comments here.
     ///
-    /// Two conventions worth keeping:
+    /// Moving a setting between sections or files is a MIGRATION, not an edit: BepInEx addresses a
+    /// setting by section and key, so a moved key reads as brand new and the owner's value is
+    /// stranded. Add a Move rung to ConfigLedger in the same commit, or every existing server loses
+    /// that value on upgrade. A harness test binds this class and fails when the ledger and the
+    /// binds disagree.
+    ///
+    /// Conventions worth keeping:
     ///
     /// 1. Every system gets its own on/off toggle from day one. That is what makes incremental
     ///    testing possible (build one system, disable the rest) and lets server owners adopt
@@ -20,6 +31,25 @@ namespace RavenIron.RagnaroksWrath.Config
     /// </summary>
     public static class ModConfig
     {
+        // ---- Sections, in the order BepInEx writes them (it sorts by name, so the numbers are
+        // two digits). Both files use the same names, so a setting's tuning sits under the same
+        // heading in the advanced file as its switch does in the main one.
+        public const string GeneralSection = "01 - General";
+        public const string SeasonSection = "02 - Season";
+        public const string WeatherSection = "03 - Weather";
+        public const string BiomeSection = "04 - Biome state";
+        public const string FireSection = "05 - Fire";
+        public const string PlagueSection = "06 - Plague";
+        public const string EcologySection = "07 - Ecology";
+        public const string FarmingSection = "08 - Farming";
+        public const string HealthSection = "09 - Health";
+        public const string ConsequenceSection = "10 - Consequence";
+        public const string RivalrySection = "11 - Rivalry";
+        public const string RelicSection = "12 - Relic";
+        public const string TitlesSection = "13 - Titles";
+        public const string WorldSection = "14 - World state";
+        public const string VisualsSection = "15 - Visuals";
+
         // ---- Core ----------------------------------------------------------------------
         public static ConfigEntry<float> TickBudgetMs;
         public static ConfigEntry<float> MaxCreditSeconds;
@@ -47,8 +77,6 @@ namespace RavenIron.RagnaroksWrath.Config
         public static ConfigEntry<float>  StormMaxIntervalSeconds;
         public static ConfigEntry<float>  StormDurationSeconds;
         public static ConfigEntry<float>  StormRangeMeters;
-        public static ConfigEntry<float>  StormFireRiskMultiplier;
-        public static ConfigEntry<float>  StormWindMultiplier;
         public static ConfigEntry<float>  StormPlagueSpreadMultiplier;
         public static ConfigEntry<bool>   StormsForceWeather;
         public static ConfigEntry<string> StormForcedEnvironment;
@@ -212,965 +240,936 @@ namespace RavenIron.RagnaroksWrath.Config
         /// </summary>
         public static ConfigEntry<int> ConfigVersion;
 
-        public static void Bind(ConfigFile cfg)
+        public static void Bind(ConfigFile cfg, ConfigFile advanced)
         {
             // BEFORE THE FIRST BIND, and that is the mechanism rather than a tidiness preference.
             // A backfill acts on a key being ABSENT from the file, and BepInEx's own Bind makes it
             // present at its shipped default. Snapshot after binding and every backfill quietly
             // becomes a no-op that still logs success and still stamps its version.
-            ConfigMigration.Begin(cfg);
-
-            const string core = "1 - Core";
-
-            TickBudgetMs = cfg.Bind(core, "TickBudgetMs", 2.0f,
-                new ConfigDescription(
-                    "Milliseconds per frame WorldTick may spend across all systems combined. " +
-                    "Work that does not fit resumes next frame. Raise only if systems are " +
-                    "visibly falling behind on a server with headroom.",
-                    new AcceptableValueRange<float>(0.25f, 16.0f)));
-
-            MaxCreditSeconds = cfg.Bind(core, "MaxCreditSeconds", 86400f,
-                new ConfigDescription(
-                    "Cap on the real elapsed time a single zone can be credited in one contact. " +
-                    "Default is 24 hours: a zone untouched for a month accrues a day of drift, " +
-                    "not a month of it. This is the dial that keeps a long-idle world playable.",
-                    new AcceptableValueRange<float>(60f, 2592000f)));
-
-            VerboseLogging = cfg.Bind(core, "VerboseLogging", false,
-                "Log every system pass rather than summaries. This mod's work is invisible by " +
-                "design; this is how you see it running.");
-
-            AutosaveIntervalSeconds = cfg.Bind(core, "AutosaveIntervalSeconds", 120f,
-                new ConfigDescription(
-                    "Seconds between writes of the zone drift store. Writing is skipped entirely " +
-                    "when nothing has changed, and a final write always happens on shutdown, so " +
-                    "this only bounds how much drift a hard crash can lose. Set 0 to disable " +
-                    "periodic writes (shutdown save still occurs).",
-                    new AcceptableValueRange<float>(0f, 3600f)));
-
-            const string feedback = "2 - Feedback";
-
-            MessageMinIntervalSeconds = cfg.Bind(feedback, "MessageMinIntervalSeconds", 8.0f,
-                new ConfigDescription(
-                    "Minimum seconds between on-screen messages, so a cascade of simultaneous " +
-                    "world events cannot spam a player off their own screen. Does not apply to " +
-                    "server-wide announcements, which are rare by policy.",
-                    new AcceptableValueRange<float>(0f, 300f)));
-
-            const string season = "3 - Season";
-
-            SeasonLengthDays = cfg.Bind(season, "SeasonLengthDays", 7,
-                new ConfigDescription(
-                    "In-game days per season, when running our own clock. Ignored entirely if " +
-                    "Seasonality (RustyMods) or Seasons (shudnal) is installed — we defer to " +
-                    "their season in that case rather than run a second clock that could " +
-                    "disagree with it.",
-                    new AcceptableValueRange<int>(1, 120)));
-
-            // Every other IWorldSystem in this mod already takes its cadence from config; this
-            // was the one of fifteen still returning a literal, which is the kind of gap nobody
-            // notices because the value is fine. 10s is what it has always run at.
-            SeasonIntervalSeconds = cfg.Bind(season, "SeasonIntervalSeconds", 10f,
-                new ConfigDescription(
-                    "Seconds between season checks. This is also how often the server tells " +
-                    "clients what season it is, so a client that joins mid-game is right within " +
-                    "one of these. Season changes rarely; the cost of a shorter interval is the " +
-                    "broadcast, not the check.",
-                    new AcceptableValueRange<float>(1f, 300f)));
-
-            AnnounceSeasonChange = cfg.Bind(season, "AnnounceSeasonChange", true,
-                "Announce season changes on screen. Automatically suppressed when Seasonality " +
-                "or Seasons (shudnal) is installed, since they already show the player the " +
-                "season visibly.");
-
-            const string weather = "6 - Weather";
-
-            WeatherIntervalSeconds = cfg.Bind(weather, "WeatherIntervalSeconds", 5f,
-                new ConfigDescription(
-                    "Seconds between WeatherSystem passes. Also how quickly a storm's start and " +
-                    "end are noticed, so keep it small: this reads state, it does not compute.",
-                    new AcceptableValueRange<float>(1f, 60f)));
-
-            StormMinIntervalSeconds = cfg.Bind(weather, "StormMinIntervalSeconds", 3600f,
-                new ConfigDescription(
-                    "Shortest gap between storms, in real seconds. No storm can fire before this " +
-                    "has passed since the last one ended.",
-                    new AcceptableValueRange<float>(60f, 86400f)));
-
-            StormMaxIntervalSeconds = cfg.Bind(weather, "StormMaxIntervalSeconds", 10800f,
-                new ConfigDescription(
-                    "Longest gap between storms. Chance ramps from zero at the minimum to " +
-                    "certainty here, so a storm is guaranteed by this point rather than merely " +
-                    "likely. A flat per-tick roll has a long tail, and a server that goes a real " +
-                    "day without a storm looks broken rather than unlucky.",
-                    new AcceptableValueRange<float>(120f, 172800f)));
-
-            StormDurationSeconds = cfg.Bind(weather, "StormDurationSeconds", 300f,
-                new ConfigDescription(
-                    "How long a storm runs, in game seconds from when it starts: only a single-player " +
-                    "pause stops it, as it stops every clock in the game. It runs out " +
-                    "whether or not anyone is near it: a storm is weather, and it blows over " +
-                    "unwatched.",
-                    new AcceptableValueRange<float>(30f, 3600f)));
-
-            StormRangeMeters = cfg.Bind(weather, "StormRangeMeters", 96f,
-                new ConfigDescription(
-                    "Radius of a storm's effect, in metres. Vanilla's own event range is 96; the " +
-                    "banner and the gameplay multipliers both use this figure, so they cannot " +
-                    "disagree about where the storm is.",
-                    new AcceptableValueRange<float>(32f, 1024f)));
-
-            // NOT YET CONNECTED, and said plainly here because the alternative is a dial that
-            // lies. Found 2026-09-18: both of these are computed on demand and consumed by
-            // NOTHING except the storm's own log line. StormPlagueSpreadMultiplier below is the
-            // same shape and is genuinely live (PlagueSystem reads it twice), which is exactly
-            // what made these two invisible - the trio was verified in-game by reading that log
-            // line, and two thirds of it was the instrument reporting itself.
-            StormFireRiskMultiplier = cfg.Bind(weather, "StormFireRiskMultiplier", 1.8f,
-                new ConfigDescription(
-                    "RESERVED, AND CURRENTLY INERT - changing this changes nothing yet. It is " +
-                    "meant as the fire risk multiplier inside a storm, but nothing reads it: a " +
-                    "storm does not presently make fire worse. Storm lightning is a separate " +
-                    "mechanism with its own settings under Fire, and it does work.",
-                    new AcceptableValueRange<float>(0f, 10f)));
-
-            StormWindMultiplier = cfg.Bind(weather, "StormWindMultiplier", 2.0f,
-                new ConfigDescription(
-                    "RESERVED, AND CURRENTLY INERT - changing this changes nothing yet. It is " +
-                    "the gameplay wind figure a storm would raise, kept apart from the wind the " +
-                    "player can see, and WindSystem can already serve it per position - but no " +
-                    "system asks yet. It is waiting on directional fire spread.",
-                    new AcceptableValueRange<float>(0f, 10f)));
-
-            StormPlagueSpreadMultiplier = cfg.Bind(weather, "StormPlagueSpreadMultiplier", 1.5f,
-                new ConfigDescription(
-                    "Plague spread multiplier inside a storm.",
-                    new AcceptableValueRange<float>(0f, 10f)));
-
-            StormsForceWeather = cfg.Bind(weather, "StormsForceWeather", false,
-                "THE ONLY SETTING IN THIS MOD THAT SELECTS AN ENVIRONMENT. Off by default: a " +
-                "storm is then a banner, gameplay multipliers and lightning under whatever sky " +
-                "the world already has. On, the storm shows StormForcedEnvironment for its " +
-                "duration through vanilla's own event override - the same mechanism boss events " +
-                "use - which the engine consults before the biome weather list. Verified " +
-                "2026-09-03 to coexist with Seasonality, which only rewrites that list; a weather " +
-                "mod that patches the override path itself may still win, silently. Every CLIENT " +
-                "needs the same value, read at game launch: the sky is chosen on the player's " +
-                "machine, and a reconnect does not re-read this file.");
-
-            StormForcedEnvironment = cfg.Bind(weather, "StormForcedEnvironment", "ThunderStorm",
-                "THE WET STORM. Environment name for a storm that rolls rainy; used only when " +
-                "StormsForceWeather is on, and never read otherwise. KNOWN INTERACTION (verified " +
-                "live 2026-08-27, and the whole reason the two looks differ): ThunderStorm is a " +
-                "WET environment, and rain rightly suppresses storm lightning - so a wet storm " +
-                "is loud and drenching and drops no bolts.");
-
-            StormDryEnvironment = cfg.Bind(weather, "StormDryEnvironment", "Eikthyr",
-                "THE DRY STORM. Vanilla's 'Eikthyr' is dark sky and thunder with no rain, so " +
-                "lightning CAN strike under it - the same storm that soaks you does not burn " +
-                "you, and the one that stays dry might. Used only when StormsForceWeather is on. " +
-                "Set this to the same value as StormForcedEnvironment if you want every storm " +
-                "to look alike again.");
-
-            StormDryChance = cfg.Bind(weather, "StormDryChance", 0.5f,
-                new ConfigDescription(
-                    "Chance that a storm rolls DRY rather than wet, decided once per storm on " +
-                    "the server. At the default of 0.5 the two are a coin flip, so the sight of " +
-                    "a dry sky is the warning that this one can start fires. 0 makes every storm " +
-                    "wet (what this mod did before storms had two faces), 1 makes every storm " +
-                    "dry. Only meaningful when StormsForceWeather is on: with it off, both kinds " +
-                    "run under the player's real sky and the roll changes nothing anyone can see.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            StormAvoidBaseMeters = cfg.Bind(weather, "StormAvoidBaseMeters", 30f,
-                new ConfigDescription(
-                    "Storms anchor on a player out in the WILD: anyone standing within this " +
-                    "range of anything player-built (any object carrying a builder id - " +
-                    "pieces and plants alike) does not draw storms. A storm centred on a " +
-                    "homestead announces drama it cannot deliver - lightning grounds out on " +
-                    "the standoff and cleared base ground gives fire nothing - so an overdue " +
-                    "storm HOLDS until somebody steps outside their walls, then breaks. " +
-                    "0 disables the filter; capped at 64 by the 3x3-zone scan.",
-                    new AcceptableValueRange<float>(0f, 64f)));
-
-            const string wind = "7 - Wind";
-
-            WindIntervalSeconds = cfg.Bind(wind, "WindIntervalSeconds", 5f,
-                new ConfigDescription(
-                    "Seconds between wind readings. Wind is read from EnvMan and cached; nothing " +
-                    "in this mod ever writes it.",
-                    new AcceptableValueRange<float>(1f, 60f)));
-
-            const string fire = "8 - Fire";
-
-            FireScorchIntervalSeconds = cfg.Bind(fire, "FireScorchIntervalSeconds", 10f,
-                new ConfigDescription(
-                    "Seconds between scorch passes. Only matters while FireFront " +
-                    "(com.raveniron.firefront, 0.17.2+) is installed - without it FireSystem is " +
-                    "dormant: fire simulation belongs to FireFront, this mod only records what " +
-                    "fire does to the land.",
-                    new AcceptableValueRange<float>(2f, 120f)));
-
-            FireScorchPerMinute = cfg.Bind(fire, "FireScorchPerMinute", 0.02f,
-                new ConfigDescription(
-                    "Scorch added per minute to any zone containing at least one active fire. " +
-                    "Deliberately per-MINUTE and deliberately flat per zone: a fire's severity " +
-                    "already shows up as more zones burning, so scaling by fire count too would " +
-                    "double-count it. Default chars a zone fully after ~50 minutes of continuous " +
-                    "burning; recovery is BiomeStateSystem's job and is slower than this.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            StormLightningEnabled = cfg.Bind(fire, "StormLightningEnabled", true,
-                "Lightning during Devastating Storms: a rare bolt ignites ground near a player " +
-                "standing in the storm, through FireFront's own fire simulation (needs FireFront " +
-                "installed with its ground spread enabled — without either, storms never strike). " +
-                "Bolts only ever land near an online player, never in rain, and never within " +
-                "LightningStandoffMeters of anything player-built. NOTE: 'never in rain' " +
-                "includes a rainy FORCED storm look — if StormsForceWeather is on, pick a dry " +
-                "environment ('Eikthyr') or storms will look wet and never strike.");
-
-            LightningMeanMinutes = cfg.Bind(fire, "LightningMeanMinutes", 15f,
-                new ConfigDescription(
-                    "Mean minutes between strikes while a storm holds at least one player under " +
-                    "a dry sky. Against the default 5-minute storm, 15 here means roughly one " +
-                    "storm in three produces a bolt — storms should threaten fire, not promise it.",
-                    new AcceptableValueRange<float>(1f, 600f)));
-
-            LightningRingMinMeters = cfg.Bind(fire, "LightningRingMinMeters", 15f,
-                new ConfigDescription(
-                    "Nearest a bolt lands to the player it picked. Far enough that a strike is " +
-                    "never a targeted kill; the fire is the threat, not the bolt.",
-                    new AcceptableValueRange<float>(0f, 50f)));
-
-            LightningRingMaxMeters = cfg.Bind(fire, "LightningRingMaxMeters", 40f,
-                new ConfigDescription(
-                    "Farthest a bolt lands from the player it picked. Kept inside the 64m " +
-                    "announcement radius so whoever the storm strikes near always hears it.",
-                    new AcceptableValueRange<float>(10f, 60f)));
-
-            LightningStandoffMeters = cfg.Bind(fire, "LightningStandoffMeters", 30f,
-                new ConfigDescription(
-                    "No bolt lands within this range of anything player-built (any object " +
-                    "carrying a builder id — pieces and plants alike). The storm menaces the " +
-                    "wild, never the homestead; a blocked bolt is simply lost, not rerolled. " +
-                    "Capped at 64 because the check scans the 3x3 zones around the strike.",
-                    new AcceptableValueRange<float>(0f, 64f)));
-
-            LightningIgniteRadiusMeters = cfg.Bind(fire, "LightningIgniteRadiusMeters", 2.5f,
-                new ConfigDescription(
-                    "Ground radius FireFront ignites at the strike point. Small on purpose: one " +
-                    "bolt starts one fire, and the weather and the land decide what it becomes.",
-                    new AcceptableValueRange<float>(0.5f, 8f)));
-
-            const string plague = "9 - Plague";
-
-            PlagueSpreadIntervalSeconds = cfg.Bind(plague, "PlagueSpreadIntervalSeconds", 60f,
-                new ConfigDescription(
-                    "Seconds between spread passes. Spread is the EVENT half of plague; growth " +
-                    "and cure run on the zone clock inside BiomeStateSystem and have their own " +
-                    "pace.",
-                    new AcceptableValueRange<float>(10f, 600f)));
-
-            PlagueGrowthPerHour = cfg.Bind(plague, "PlagueGrowthPerHour", 0.03f,
-                new ConfigDescription(
-                    "How much plague grows per hour of elapsed contact time in an already-" +
-                    "infected zone, before the season multiplier. Against the recovery rate this " +
-                    "decides curability by season: at defaults, spring (x1.4) grows at 0.042/h " +
-                    "vs 0.02/h recovery, while winter (x0.5) manages 0.015/h and the zone heals. " +
-                    "Set 0 to freeze all growth.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            PlagueCorruptionBoost = cfg.Bind(plague, "PlagueCorruptionBoost", 1.0f,
-                new ConfigDescription(
-                    "How strongly zone Corruption feeds plague: growth x (1 + boost x Corruption). " +
-                    "At 1.0 a fully corrupted zone doubles its plague growth.",
-                    new AcceptableValueRange<float>(0f, 4f)));
-
-            PlagueSpreadThreshold = cfg.Bind(plague, "PlagueSpreadThreshold", 0.5f,
-                new ConfigDescription(
-                    "Plague level a zone needs before it can infect its neighbours. Fresh seeds " +
-                    "start far below this and only climb through player contact - which is the " +
-                    "containment: the front advances exactly as far as people actually go.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            PlagueSeedAmount = cfg.Bind(plague, "PlagueSeedAmount", 0.05f,
-                new ConfigDescription(
-                    "Plague level a newly infected zone starts at.",
-                    new AcceptableValueRange<float>(0.01f, 0.5f)));
-
-            PlagueGenesisEnabled = cfg.Bind(plague, "PlagueGenesisEnabled", true,
-                "Outbreaks take root ORGANICALLY: a rare roll seeds sickness into ground " +
-                "players actually touch — likelier on corrupted or burnt land, carried by " +
-                "storms. Off = plagues start only by admin hand (the pre-0.22 behavior).");
-
-            PlagueGenesisMeanHours = cfg.Bind(plague, "PlagueGenesisMeanHours", 12f,
-                new ConfigDescription(
-                    "Mean real hours of played time between organic outbreaks on CLEAN " +
-                    "ground. Blighted ground shortens it (up to 5x at full blight); a " +
-                    "storm overhead multiplies again.",
-                    new AcceptableValueRange<float>(0.5f, 500f)));
-
-            PlagueSpreadChance = cfg.Bind(plague, "PlagueSpreadChance", 0.25f,
-                new ConfigDescription(
-                    "Chance per spread pass that each frontier zone is seeded, before the storm " +
-                    "multiplier at that zone. Not per source: a zone bordered by three hotspots " +
-                    "rolls once.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            PlagueMaxSpreadsPerTick = cfg.Bind(plague, "PlagueMaxSpreadsPerTick", 16,
-                new ConfigDescription(
-                    "Upper bound on zones seeded in one pass, as a backstop against a huge " +
-                    "frontier all rolling well at once.",
-                    new AcceptableValueRange<int>(1, 256)));
-
-            const string worldstate = "10 - World state";
-
-            WorldStateIntervalSeconds = cfg.Bind(worldstate, "WorldStateIntervalSeconds", 30f,
-                new ConfigDescription(
-                    "Seconds between derivations of the world condition. Derived bottom-up " +
-                    "from the zone store and weather every pass, never persisted: if it dies, " +
-                    "the next pass recomputes the same answer.",
-                    new AcceptableValueRange<float>(10f, 600f)));
-
-            WorldFlourishingBurden = cfg.Bind(worldstate, "WorldFlourishingBurden", 0.25f,
-                new ConfigDescription(
-                    "Total burden at or below which the land flourishes.",
-                    new AcceptableValueRange<float>(0f, 10f)));
-
-            WorldAilingBurden = cfg.Bind(worldstate, "WorldAilingBurden", 4f,
-                new ConfigDescription(
-                    "Total burden at which the land turns Ailing. Burden is a weighted sum over " +
-                    "every tracked zone (plague x1.5, corruption x1, scorch x1, depletion x0.75, " +
-                    "frost x0.5), so it scales with real damage, not with how many zones happen " +
-                    "to be tracked.",
-                    new AcceptableValueRange<float>(0.5f, 100f)));
-
-            WorldStrickenBurden = cfg.Bind(worldstate, "WorldStrickenBurden", 12f,
-                new ConfigDescription(
-                    "Total burden at which the land is Stricken. Keep well above Ailing; " +
-                    "improvements only announce after burden clears a 15 percent hysteresis " +
-                    "band, so transitions cannot flap.",
-                    new AcceptableValueRange<float>(1f, 500f)));
-
-            WorldStormBurden = cfg.Bind(worldstate, "WorldStormBurden", 1f,
-                new ConfigDescription(
-                    "Burden added while a Devastating Storm runs - the weather taking its seat " +
-                    "when the land is judged.",
-                    new AcceptableValueRange<float>(0f, 20f)));
-
-            const string ecology = "11 - Ecology";
-
-            EcologyIntervalSeconds = cfg.Bind(ecology, "EcologyIntervalSeconds", 60f,
-                new ConfigDescription(
-                    "Seconds between blight-pressure passes.",
-                    new AcceptableValueRange<float>(10f, 600f)));
-
-            EcologyCorruptionPerHour = cfg.Bind(ecology, "EcologyCorruptionPerHour", 0.01f,
-                new ConfigDescription(
-                    "Corruption accrued per hour in a zone held at the pressure threshold; " +
-                    "scales up as plague or scorch exceed it. Corruption then feeds plague " +
-                    "growth through PlagueCorruptionBoost - the loop that makes a neglected " +
-                    "outbreak worse than two clean ones. Set 0 to sever the loop.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            EcologyPlagueThreshold = cfg.Bind(ecology, "EcologyPlagueThreshold", 0.3f,
-                new ConfigDescription(
-                    "Plague level at which the land beneath begins to corrupt.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            EcologyScorchThreshold = cfg.Bind(ecology, "EcologyScorchThreshold", 0.3f,
-                new ConfigDescription(
-                    "Scorch level at which the land beneath begins to corrupt.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            const string farming = "12 - Farming";
-
-            FarmingIntervalSeconds = cfg.Bind(farming, "FarmingIntervalSeconds", 45f,
-                new ConfigDescription(
-                    "Seconds between crop-sweep steps. Deliberately not 60: AwayFromHome " +
-                    "rescans the full ZDO index every 60s, and two sweeps landing together is " +
-                    "a stutter neither mod can diagnose alone.",
-                    new AcceptableValueRange<float>(10f, 600f)));
-
-            FarmingDepletionPerCropHour = cfg.Bind(farming, "FarmingDepletionPerCropHour", 0.002f,
-                new ConfigDescription(
-                    "Fertility depletion per standing crop per hour. At the default, a 25-crop " +
-                    "field tires its zone fully in about 20 hours of real uptime; rest heals " +
-                    "it through the biome recovery rate.",
-                    new AcceptableValueRange<float>(0f, 0.5f)));
-
-            FarmingGrowthSlowdownAtFull = cfg.Bind(farming, "FarmingGrowthSlowdownAtFull", 2f,
-                new ConfigDescription(
-                    "Grow-time multiplier for crops on FULLY depleted soil (linear from 1.0 " +
-                    "on pristine ground). The consumer side of depletion — tired fields grow " +
-                    "slow, and resting a field genuinely pays. 1 disables.",
-                    new AcceptableValueRange<float>(1f, 5f)));
-
-            FarmingCropPrefabs = cfg.Bind(farming, "FarmingCropPrefabs",
-                "sapling_carrot,sapling_turnip,sapling_onion,sapling_barley,sapling_flax,sapling_seedcarrot,sapling_seedturnip,sapling_seedonion,sapling_jotunpuffs,sapling_magecap",
-                "Comma-separated crop prefab names to sweep. Game content, so data rather than " +
-                "code: a name the game no longer knows costs a silent zero matches - check " +
-                "with VerboseLogging if a crop stops tiring soil after a game patch.");
-
-            const string titles = "13 - Titles";
-
-            TitleIntervalSeconds = cfg.Bind(titles, "TitleIntervalSeconds", 10f,
-                new ConfigDescription(
-                    "Seconds between title-earning checks against online players.",
-                    new AcceptableValueRange<float>(2f, 120f)));
-
-            WinterbornSeconds = cfg.Bind(titles, "WinterbornSeconds", 1800f,
-                new ConfigDescription(
-                    "Online seconds through Winter to earn Winterborn. The clock is in-memory " +
-                    "and resets on server restart - under-awarding is a shrug, double-announcing " +
-                    "is spam.",
-                    new AcceptableValueRange<float>(60f, 86400f)));
-
-            AnnounceTitles = cfg.Bind(titles, "AnnounceTitles", true,
-                "Announce newly earned titles to everyone. Titles are rare by construction; " +
-                "placeholder names (Stranger) are never announced.");
-
-            const string sync = "14 - Client sync and visuals";
-
-            ZoneSyncIntervalSeconds = cfg.Bind(sync, "ZoneSyncIntervalSeconds", 10f,
-                new ConfigDescription(
-                    "Seconds between zone-state pushes to each connected player. Pushes are " +
-                    "absolute snapshots of the ring around them, defaults included, so a " +
-                    "dropped packet heals on the next push - no delta bookkeeping to rot.",
-                    new AcceptableValueRange<float>(2f, 120f)));
-
-            ZoneSyncRadiusZones = cfg.Bind(sync, "ZoneSyncRadiusZones", 2,
-                new ConfigDescription(
-                    "Ring radius in zones pushed to each player. 2 means a 5x5 block - under " +
-                    "a kilobyte per push.",
-                    new AcceptableValueRange<int>(1, 4)));
-
-            PlagueFogEnabled = cfg.Bind(sync, "PlagueFogEnabled", true,
-                "Render the plague miasma on this client. Purely visual, built procedurally " +
-                "(no assets), local-only - never networked, never saved.");
-
-            PlagueFogDensity = cfg.Bind(sync, "PlagueFogDensity", 1f,
-                new ConfigDescription(
-                    "Fog density multiplier for this client. Zones below plague 0.15 never " +
-                    "fog regardless - the frontier's fresh seeds should not telegraph " +
-                    "themselves the tick they spread.",
-                    new AcceptableValueRange<float>(0f, 4f)));
-
-            FrostBreathEnabled = cfg.Bind(sync, "FrostBreathEnabled", true,
-                "Fog the local player's breath on land whose frost has drifted high. Purely " +
-                "visual, procedural, local-only - the warning that precedes the chill.");
-
-            FrostBreathFloor = cfg.Bind(sync, "FrostBreathFloor", 0.3f,
-                new ConfigDescription(
-                    "Zone frost at which breath starts to fog. Deliberately BELOW the chill " +
-                    "threshold (0.5 default): the land shows its cold before it bites, the " +
-                    "way plague fogs before it sickens.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            ScorchAshEnabled = cfg.Bind(sync, "ScorchAshEnabled", true,
-                "Drift gray ash over zones whose Scorch runs high — the land's memory of " +
-                "fire, thinning as it heals. Purely visual, procedural, local-only. " +
-                "FireFront's living flames and its permanent dirt-paint are separate and " +
-                "unaffected.");
-
-            ScorchAshDensity = cfg.Bind(sync, "ScorchAshDensity", 1f,
-                new ConfigDescription(
-                    "Ash density multiplier for this client. Zones below scorch 0.1 never " +
-                    "show ash regardless.",
-                    new AcceptableValueRange<float>(0f, 4f)));
-
-            const string health = "15 - Health";
-
-            HealthIntervalSeconds = cfg.Bind(health, "HealthIntervalSeconds", 5f,
-                new ConfigDescription(
-                    "Seconds between exposure passes over online players. Small enough that " +
-                    "walking through the edge of an outbreak registers; the per-pass work is " +
-                    "one zone read per player.",
-                    new AcceptableValueRange<float>(1f, 60f)));
-
-            ExposureMinutesToMax = cfg.Bind(health, "ExposureMinutesToMax", 30f,
-                new ConfigDescription(
-                    "Minutes of standing on FULL plague (1.0) to reach maximum exposure; the " +
-                    "rate scales linearly with the plague actually underfoot, and nothing " +
-                    "accrues below the fog floor (0.15) — the sickness must not telegraph " +
-                    "what the fog hides. Sickness is the consequence of settling in blight, " +
-                    "not of visiting it.",
-                    new AcceptableValueRange<float>(5f, 240f)));
-
-            ExposureRecoveryMinutes = cfg.Bind(health, "ExposureRecoveryMinutes", 20f,
-                new ConfigDescription(
-                    "Minutes from maximum exposure back to clean, off plagued ground.",
-                    new AcceptableValueRange<float>(2f, 240f)));
-
-            ExposureRestedRecoveryMultiplier = cfg.Bind(health, "ExposureRestedRecoveryMultiplier", 2f,
-                new ConfigDescription(
-                    "Recovery speed multiplier while Rested. Vanilla remedies are the whole " +
-                    "counterplay language: rest heals, no new items to learn.",
-                    new AcceptableValueRange<float>(1f, 10f)));
-
-            ExposurePoisonResistMultiplier = cfg.Bind(health, "ExposurePoisonResistMultiplier", 0.5f,
-                new ConfigDescription(
-                    "Accrual multiplier while poison-resistant (mead, gear or food — read " +
-                    "from damage modifiers, the same aggregation vanilla's cold gate uses). " +
-                    "0.5 means protection halves how fast the sickness takes hold.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            ExposureTier1 = cfg.Bind(health, "ExposureTier1", 0.25f,
-                new ConfigDescription(
-                    "Exposure at which the sickness BEGINS: the icon appears and stamina " +
-                    "regen starts to sag (stamina first — sickness in the body before the " +
-                    "wound).",
-                    new AcceptableValueRange<float>(0.01f, 1f)));
-
-            ExposureTier2 = cfg.Bind(health, "ExposureTier2", 0.5f,
-                new ConfigDescription(
-                    "Exposure at which health regen starts failing too.",
-                    new AcceptableValueRange<float>(0.01f, 1f)));
-
-            ExposureTier3 = cfg.Bind(health, "ExposureTier3", 0.8f,
-                new ConfigDescription(
-                    "Exposure announced as the sickness at its worst. Announcement tier only " +
-                    "— the multipliers ramp smoothly, this is where the centre-screen line " +
-                    "fires.",
-                    new AcceptableValueRange<float>(0.01f, 1f)));
-
-            SicknessStaminaRegenAtTier1 = cfg.Bind(health, "SicknessStaminaRegenAtTier1", 0.85f,
-                new ConfigDescription(
-                    "Stamina regen multiplier the INSTANT Tier1 is crossed — the step that " +
-                    "makes 'a sickness takes root in you' true when it is announced. Setting " +
-                    "this to 1.0 restores the 0.8.0 behaviour where the first tier was " +
-                    "announced but could not be felt.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            SicknessStaminaRegenAtMax = cfg.Bind(health, "SicknessStaminaRegenAtMax", 0.3f,
-                new ConfigDescription(
-                    "Stamina regen multiplier at exposure 1.0, ramping from the Tier1 step. " +
-                    "With the defaults this reproduces the agreed table: x0.85 at 0.25, " +
-                    "x0.67 at 0.5, x0.45 at 0.8. NEVER a damage number: the sickness " +
-                    "weakens, the world kills.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            SicknessHealthRegenAtTier2 = cfg.Bind(health, "SicknessHealthRegenAtTier2", 0.8f,
-                new ConfigDescription(
-                    "Health regen multiplier the instant Tier2 is crossed — the wound half " +
-                    "of the sickness arriving where 'the sickness deepens' is announced.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            SicknessHealthRegenAtMax = cfg.Bind(health, "SicknessHealthRegenAtMax", 0.38f,
-                new ConfigDescription(
-                    "Health regen multiplier at exposure 1.0, ramping from the Tier2 step " +
-                    "(x0.80 at 0.5, x0.55 at 0.8 with the defaults).",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            FrostChillEnabled = cfg.Bind(health, "FrostChillEnabled", true,
-                "High zone frost chills players vanilla's weather would not — through our " +
-                "own Cold-like effect, never vanilla's (fighting its env pass is message " +
-                "spam by construction). Campfires, shelter and frost resistance all cancel " +
-                "it, exactly like the real thing.");
-
-            FrostChillThreshold = cfg.Bind(health, "FrostChillThreshold", 0.5f,
-                new ConfigDescription(
-                    "Zone frost at which the chill takes hold of exposed players.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            ChillStaminaRegenMultiplier = cfg.Bind(health, "ChillStaminaRegenMultiplier", 0.8f,
-                new ConfigDescription(
-                    "Stamina regen multiplier while chilled.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            ChillHealthRegenMultiplier = cfg.Bind(health, "ChillHealthRegenMultiplier", 0.7f,
-                new ConfigDescription(
-                    "Health regen multiplier while chilled.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            const string consequence = "16 - Consequence";
-
-            ConsequenceIntervalSeconds = cfg.Bind(consequence, "ConsequenceIntervalSeconds", 10f,
-                new ConfigDescription(
-                    "Seconds between the announcer's passes over online players. The physical " +
-                    "acts are client-side and continuous; this only paces the one-line-per-zone " +
-                    "voice.",
-                    new AcceptableValueRange<float>(2f, 120f)));
-
-            ConsequenceBarren = cfg.Bind(consequence, "ConsequenceBarren", true,
-                "Pickables (berries, mushrooms, thistle) refuse the hand on plagued or " +
-                "scorched ground, with a withered hover line explaining why.");
-
-            ConsequenceEmpower = cfg.Bind(consequence, "ConsequenceEmpower", true,
-                "Hostile spawns on corrupted ground get better odds on vanilla's own " +
-                "level-up roll — starred enemies where the land is worst. Passive wildlife " +
-                "is never starred.");
-
-            ConsequenceSicken = cfg.Bind(consequence, "ConsequenceSicken", true,
-                "Passive wildlife in plagued zones sickens and visibly slows. Wears off on " +
-                "its own once the animal (or the plague) is gone.");
-
-            ConsequenceWither = cfg.Bind(consequence, "ConsequenceWither", true,
-                "Crops planted in badly blighted soil turn unhealthy and die at grow time, " +
-                "through vanilla's own cant-grow path. Replanting after curing the land is " +
-                "the remedy.");
-
-            AnnounceConsequences = cfg.Bind(consequence, "AnnounceConsequences", true,
-                "One line, once per zone per session, the first time a player stands in a " +
-                "zone that has crossed into any consequence. Never per-bush, never per-deer.");
-
-            BarrenPlagueThreshold = cfg.Bind(consequence, "BarrenPlagueThreshold", 0.4f,
-                new ConfigDescription(
-                    "Plague at which pickables stop yielding.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            BarrenScorchThreshold = cfg.Bind(consequence, "BarrenScorchThreshold", 0.5f,
-                new ConfigDescription(
-                    "Scorch at which pickables stop yielding. Ash bears nothing.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            SickenPlagueThreshold = cfg.Bind(consequence, "SickenPlagueThreshold", 0.4f,
-                new ConfigDescription(
-                    "Plague at which passive wildlife sickens.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            SickenSpeedPenalty = cfg.Bind(consequence, "SickenSpeedPenalty", 0.35f,
-                new ConfigDescription(
-                    "Fraction of movement speed a sickened animal loses (0.35 = 35% slower) " +
-                    "— the visible stagger. Slow-only: the lethal edge from the design " +
-                    "conversation is deliberately unbuilt until it earns its own pass.",
-                    new AcceptableValueRange<float>(0f, 0.9f)));
-
-            EmpowerCorruptionThreshold = cfg.Bind(consequence, "EmpowerCorruptionThreshold", 0.5f,
-                new ConfigDescription(
-                    "Corruption at which spawns start coming up meaner.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            EmpowerLevelUpMultiplierAtFull = cfg.Bind(consequence, "EmpowerLevelUpMultiplierAtFull", 6f,
-                new ConfigDescription(
-                    "Multiplier on vanilla's level-up chance at corruption 1.0, ramping from " +
-                    "1.0 at the threshold. Vanilla's base roll is ~10 percent per level, so 6 " +
-                    "means roughly 60 percent of eligible spawns star on fully corrupted " +
-                    "ground. Vanilla's own per-creature caps still apply.",
-                    new AcceptableValueRange<float>(1f, 10f)));
-
-            CropWitherBlightThreshold = cfg.Bind(consequence, "CropWitherBlightThreshold", 0.6f,
-                new ConfigDescription(
-                    "Blight (the worse of plague and corruption) at which planted crops " +
-                    "wither and die. Growth-RATE effects belong to FarmingSystem; this is " +
-                    "only the kill line.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            WildlifePrefabs = cfg.Bind(consequence, "WildlifePrefabs", "Deer,Boar,Hare",
-                "Comma-separated prefab names counted as passive wildlife: sickened by " +
-                "plague, never starred by corruption. An explicit list rather than a " +
-                "faction guess - factions lump deer in with greydwarfs. Game content, so " +
-                "data rather than code.");
-
-            const string rivalry = "17 - Rivalry";
-
-            RivalryIntervalSeconds = cfg.Bind(rivalry, "RivalryIntervalSeconds", 30f,
-                new ConfigDescription(
-                    "Seconds between ledger passes (decay, healing observation, one tending " +
-                    "sweep step). Deliberately offset from Farming's 45 and AwayFromHome's " +
-                    "60 so the ZDO walks do not land on the same frame.",
-                    new AcceptableValueRange<float>(5f, 300f)));
-
-            RivalryHalfLifeHours = cfg.Bind(rivalry, "RivalryHalfLifeHours", 48f,
-                new ConfigDescription(
-                    "Real hours for recorded harm and care to fade by half. Grudges and " +
-                    "gratitude both decay — the world forgives on a long enough timeline, " +
-                    "and the ledger stays sparse because of it. 0 would disable decay, so " +
-                    "the floor is 1.",
-                    new AcceptableValueRange<float>(1f, 720f)));
-
-            CarePerHealedPoint = cfg.Bind(rivalry, "CarePerHealedPoint", 1f,
-                new ConfigDescription(
-                    "Care booked per point of zone damage healed while present, split among " +
-                    "everyone whose contact ring covered the zone. A full plague cure earns " +
-                    "its attendants one point between them at the default.",
-                    new AcceptableValueRange<float>(0f, 10f)));
-
-            TendingCarePerPlant = cfg.Bind(rivalry, "TendingCarePerPlant", 0.05f,
-                new ConfigDescription(
-                    "Care booked to a crop's planter, once per plant ever (watermarked " +
-                    "against replant-farming and restarts). Uses the same crop prefab list " +
-                    "as Farming.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            ArsonHarmPerScorchPoint = cfg.Bind(rivalry, "ArsonHarmPerScorchPoint", 1f,
-                new ConfigDescription(
-                    "Harm booked to a fire event's igniter per point of scorch their fire " +
-                    "burns into each zone — fully charring one zone books its arsonist one " +
-                    "point at the default. Needs FireFront 0.17.3+ (the igniter surface); " +
-                    "with an older FireFront, arson attribution is dormant and scorch " +
-                    "still accrues. Natural and creature fires book nobody.",
-                    new AcceptableValueRange<float>(0f, 10f)));
-
-            GrudgeScale = cfg.Bind(rivalry, "GrudgeScale", 1f,
-                new ConfigDescription(
-                    "How strongly net harm (harm minus care) becomes grudge, clamped to " +
-                    "0..1 after scaling. At 1.0, fully charring a zone earns its full " +
-                    "grudge; tending genuinely mollifies. The grudge drives every phase-B " +
-                    "tooth: drift harshness, the personal pick refusal, the title.",
-                    new AcceptableValueRange<float>(0f, 10f)));
-
-            GrudgePickRefuse = cfg.Bind(rivalry, "GrudgePickRefuse", 0.25f,
-                new ConfigDescription(
-                    "Grudge at which a zone's pickables refuse THAT PLAYER specifically — " +
-                    "another player picks the same bush untroubled. Tend the land or let " +
-                    "the grudge fade (48h half-life) to be forgiven.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            AshbringerGrudge = cfg.Bind(rivalry, "AshbringerGrudge", 0.5f,
-                new ConfigDescription(
-                    "Worst-zone grudge at which the Ashbringer title lands (harm is all " +
-                    "fire today, so the name is true). Awarded once per crossing — latest " +
-                    "earned wins, like every title.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            CareDominanceFloor = cfg.Bind(rivalry, "CareDominanceFloor", 0.2f,
-                new ConfigDescription(
-                    "Care below which nobody can hold a zone's memory as its carer — " +
-                    "nobody wins ground they barely touched.",
-                    new AcceptableValueRange<float>(0.05f, 5f)));
-
-            HarmDominanceFloor = cfg.Bind(rivalry, "HarmDominanceFloor", 0.2f,
-                new ConfigDescription(
-                    "Harm below which nobody counts as a zone's dominant despoiler.",
-                    new AcceptableValueRange<float>(0.05f, 5f)));
-
-            ContestHysteresis = cfg.Bind(rivalry, "ContestHysteresis", 0.15f,
-                new ConfigDescription(
-                    "How far past an incumbent's value a challenger must reach to take a " +
-                    "held zone (0.15 = 15 percent) — the WorldState anti-flap band, " +
-                    "applied to people. Vacancies fill silently; only genuine takings " +
-                    "flip.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            AnnounceContests = cfg.Bind(rivalry, "AnnounceContests", true,
-                "Narrate a zone changing hands, to players near it, only when both rivals " +
-                "genuinely shaped the ground (both above the floor). One line per actual " +
-                "flip; a one-player world never hears this voice.");
-
-            MercyRecoveryBonus = cfg.Bind(rivalry, "MercyRecoveryBonus", 0.25f,
-                new ConfigDescription(
-                    "Extra zone recovery while its dominant carer's contact covers it " +
-                    "(0.25 = 25 percent faster healing). The land takes sides.",
-                    new AcceptableValueRange<float>(0f, 2f)));
-
-            MercySicknessBonus = cfg.Bind(rivalry, "MercySicknessBonus", 0.5f,
-                new ConfigDescription(
-                    "Extra plague-exposure recovery while standing on ground whose memory " +
-                    "you hold as dominant carer (0.5 = 50 percent faster). Decay only — " +
-                    "the land's favour heals, it does not shield.",
-                    new AcceptableValueRange<float>(0f, 3f)));
-
-            WardenZonesHeld = cfg.Bind(rivalry, "WardenZonesHeld", 3,
-                new ConfigDescription(
-                    "Zones held as dominant carer to earn the Warden title.",
-                    new AcceptableValueRange<int>(1, 64)));
-
-            DespoilerZonesHeld = cfg.Bind(rivalry, "DespoilerZonesHeld", 3,
-                new ConfigDescription(
-                    "Zones held as dominant harmer to earn the Despoiler title.",
-                    new AcceptableValueRange<int>(1, 64)));
-
-            ContestBlightThreshold = cfg.Bind(rivalry, "ContestBlightThreshold", 0.5f,
-                new ConfigDescription(
-                    "Blight (the worse of plague and corruption) a zone needs to be WAR " +
-                    "ground. Contested = this AND real human care both present: sick " +
-                    "untended ground is just sick, tended healthy ground is just loved.",
-                    new AcceptableValueRange<float>(0.1f, 1f)));
-
-            ContestCareThreshold = cfg.Bind(rivalry, "ContestCareThreshold", 0.3f,
-                new ConfigDescription(
-                    "Total care (all players summed) a blighted zone needs to be contested " +
-                    "rather than merely lost.",
-                    new AcceptableValueRange<float>(0.05f, 5f)));
-
-            StormContestMultiplier = cfg.Bind(rivalry, "StormContestMultiplier", 2f,
-                new ConfigDescription(
-                    "War intensity while a Devastating Storm covers a contested zone — the " +
-                    "'contest escalation' rule 4 always promised the weather. 1 disables " +
-                    "escalation.",
-                    new AcceptableValueRange<float>(1f, 5f)));
-
-            ContestStarBonus = cfg.Bind(rivalry, "ContestStarBonus", 1f,
-                new ConfigDescription(
-                    "Extra multiplier on the blight's star odds per point of war intensity " +
-                    "(stacks on the task 12 corruption empowerment). At 1.0, contested " +
-                    "ground doubles the odds and a storm-escalated war triples them.",
-                    new AcceptableValueRange<float>(0f, 5f)));
-
-            ContestWildSpawnChance = cfg.Bind(rivalry, "ContestWildSpawnChance", 100f,
-                new ConfigDescription(
-                    "Spawn chance override for the wildlife list near a player on contested " +
-                    "ground (vanilla's own pheromone machinery — the wild answering the " +
-                    "war horn). Vanilla base chances are typically far lower.",
-                    new AcceptableValueRange<float>(0f, 100f)));
-
-            ContestWildMaxSpawned = cfg.Bind(rivalry, "ContestWildMaxSpawned", 15,
-                new ConfigDescription(
-                    "Max concurrent instances gate for each wildlife prefab during the war " +
-                    "surge. Gate only: vanilla's group-size arithmetic uses the spawner's " +
-                    "raw cap, so the war REFILLS wildlife toward vanilla's own limit faster " +
-                    "— it can never crowd past it. Decided 2026-08-26: refill pressure is " +
-                    "the design; no mod-owned spawner.",
-                    new AcceptableValueRange<int>(1, 20)));
-
-            EnableNemesis = cfg.Bind(rivalry, "EnableNemesis", true,
-                "Phase E: the creature that kills a player is marked — starred up, its " +
-                "nameplate remembering who it slew. The mark lives in the creature's own " +
-                "ZDO and travels with the world save; a despawn means it got away.");
-
-            NemesisMaxLevel = cfg.Bind(rivalry, "NemesisMaxLevel", 3,
-                new ConfigDescription(
-                    "Highest level a nemesis climbs to through player kills (vanilla level " +
-                    "3 = two stars). A cap below a creature's current level never demotes it.",
-                    new AcceptableValueRange<int>(1, 5)));
-
-            const string relic = "18 - Relic";
-
-            RelicIntervalSeconds = cfg.Bind(relic, "RelicIntervalSeconds", 30f,
-                new ConfigDescription("Seconds between relic passes.",
-                    new AcceptableValueRange<float>(5f, 600f)));
-
-            FireRelicPeakThreshold = cfg.Bind(relic, "FireRelicPeakThreshold", 0.5f,
-                new ConfigDescription(
-                    "Scorch a zone must reach for its healing to count as a story: fully " +
-                    "recovering from a peak past this line consecrates a blessed stone.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            PlagueRelicPeakThreshold = cfg.Bind(relic, "PlagueRelicPeakThreshold", 0.5f,
-                new ConfigDescription(
-                    "Plague a zone must reach for its cure to count as a story — the spread " +
-                    "threshold by default, so only a real outbreak's cure raises a stone.",
-                    new AcceptableValueRange<float>(0.05f, 1f)));
-
-            RelicBlessedRecoveryMult = cfg.Bind(relic, "RelicBlessedRecoveryMult", 1.25f,
-                new ConfigDescription("Zone recovery drift multiplier on blessed ground.",
-                    new AcceptableValueRange<float>(1f, 3f)));
-
-            RelicCursedRecoveryMult = cfg.Bind(relic, "RelicCursedRecoveryMult", 0.8f,
-                new ConfigDescription("Zone recovery drift multiplier on cursed ground.",
-                    new AcceptableValueRange<float>(0.25f, 1f)));
-
-            RelicBlessedExposureDrainMult = cfg.Bind(relic, "RelicBlessedExposureDrainMult", 1.5f,
-                new ConfigDescription(
-                    "Plague exposure decays this much faster while standing on blessed " +
-                    "ground. Decay only — the land's favour heals, it does not shield.",
-                    new AcceptableValueRange<float>(1f, 3f)));
-
-            RelicCursedExposureAccrualMult = cfg.Bind(relic, "RelicCursedExposureAccrualMult", 1.25f,
-                new ConfigDescription(
-                    "Plague exposure accrues this much faster while standing on cursed ground.",
-                    new AcceptableValueRange<float>(1f, 3f)));
-
-            RelicCursedStarBonus = cfg.Bind(relic, "RelicCursedStarBonus", 0.25f,
-                new ConfigDescription(
-                    "Star-odds bonus on cursed ground — the task 12 surface at a gentler " +
-                    "dial than the war's (0.25 = x1.25 odds).",
-                    new AcceptableValueRange<float>(0f, 2f)));
-
-            RelicVandalHarm = cfg.Bind(relic, "RelicVandalHarm", 0.5f,
-                new ConfigDescription(
-                    "Harm booked into the rivalry ledger against a player who breaks a " +
-                    "relic stone. The world's memory CAN be vandalized; it is not free.",
-                    new AcceptableValueRange<float>(0f, 5f)));
-
-            RelicPrefabCandidates = cfg.Bind(relic, "RelicPrefabCandidates", "highstone,widestone",
-                "Comma-separated vanilla prefab names tried in order for the stone. The " +
-                "first that resolves with a ZNetView is raised; the choice and its " +
-                "components are logged (the PlagueFog shader-chain pattern). Existing " +
-                "prefabs only — this mod ships none, deliberately.");
-
-            RelicRunesEnabled = cfg.Bind(relic, "RelicRunesEnabled", true,
-                "Rune glyphs rising around standing relic stones — gold on blessed " +
-                "ground, red on cursed. Procedural, client-side, purely visual.");
-
-            const string systems = "4 - Systems";
-
-
-
-
-
-
-
-            EnableSeason      = cfg.Bind(systems, "EnableSeason",      true, "Master switch for SeasonSystem.");
-            EnableWeather     = cfg.Bind(systems, "EnableWeather",     true, "Master switch for WeatherSystem, including Devastating Storms.");
-            EnableWind        = cfg.Bind(systems, "EnableWind",        true, "Master switch for WindSystem.");
-            EnableBiomeState  = cfg.Bind(systems, "EnableBiomeState",  true, "Master switch for BiomeStateSystem (per-zone fertility, corruption, scorch, frost).");
-            EnableFire        = cfg.Bind(systems, "EnableFire",        true, "Master switch for FireSystem.");
-            EnablePlague      = cfg.Bind(systems, "EnablePlague",      true, "Master switch for PlagueSystem.");
-            EnableEcology     = cfg.Bind(systems, "EnableEcology",     true, "Master switch for EcologySystem.");
-            EnableFarming     = cfg.Bind(systems, "EnableFarming",     true, "Master switch for FarmingSystem.");
-            EnableHealth      = cfg.Bind(systems, "EnableHealth",      true, "Master switch for HealthSystem.");
-            EnableConsequence = cfg.Bind(systems, "EnableConsequence", true, "Master switch for ConsequenceSystem.");
-            EnableRivalry     = cfg.Bind(systems, "EnableRivalry",     true, "Master switch for RivalrySystem.");
-            EnableRelic       = cfg.Bind(systems, "EnableRelic",       true, "Master switch for RelicSystem.");
-            EnableZoneSync    = cfg.Bind(systems, "EnableZoneSync",    true, "Master switch for ZoneSyncSystem (zone state pushed to clients for visuals).");
-            EnableWorldState  = cfg.Bind(systems, "EnableWorldState",  true, "Master switch for WorldStateSystem (derived world condition and announcements).");
-            EnableTitle       = cfg.Bind(systems, "EnableTitle",       true, "Master switch for TitleSystem (earned title under player nameplates).");
-
-            const string biome = "5 - Biome state";
-
-            BiomeStateIntervalSeconds = cfg.Bind(biome, "BiomeStateIntervalSeconds", 30f,
-                new ConfigDescription(
-                    "Seconds between BiomeStateSystem passes. Deliberately not 60: AwayFromHome " +
-                    "rescans the full ZDO index every 60s by default, and two heavy passes " +
-                    "landing on the same frame is a stutter neither mod can diagnose alone.",
-                    new AcceptableValueRange<float>(5f, 600f)));
-
-            BiomeContactRadiusZones = cfg.Bind(biome, "BiomeContactRadiusZones", 1,
-                new ConfigDescription(
-                    "How far a player's presence reaches, in zones. 0 is the zone they stand in " +
-                    "only; 1 is the 3x3 around them. Raising this multiplies per-tick work by " +
-                    "the ring area, so it is the first dial to lower on a crowded server.",
-                    new AcceptableValueRange<int>(0, 3)));
-
-            BiomeMaxZonesPerTick = cfg.Bind(biome, "BiomeMaxZonesPerTick", 64,
-                new ConfigDescription(
-                    "Upper bound on zones drifted in one pass. Work already scales with players " +
-                    "present rather than world size, so this is a backstop for a very crowded " +
-                    "server: whatever does not fit resumes next tick from where it stopped, and " +
-                    "the elapsed time it is owed keeps accruing meanwhile.",
-                    new AcceptableValueRange<int>(1, 1024)));
-
-            BiomeRecoveryPerHour = cfg.Bind(biome, "BiomeRecoveryPerHour", 0.02f,
-                new ConfigDescription(
-                    "How much of the 0..1 scale a zone recovers per hour of elapsed real time. " +
-                    "Every field is a deviation from pristine, so this is the rate at which the " +
-                    "land forgets. Default heals fully-damaged land in about 50 hours away.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            BiomeFrostPressurePerHour = cfg.Bind(biome, "BiomeFrostPressurePerHour", 0.015f,
-                new ConfigDescription(
-                    "How much Frost accumulates per hour, before the season's cold multiplier. " +
-                    "Frost is the one value that builds with no event behind it: winter is a net " +
-                    "gain against recovery, and the thaw is a net loss. Set 0 to make this " +
-                    "system purely restorative.",
-                    new AcceptableValueRange<float>(0f, 1f)));
-
-            // Bound LAST, with every other key already in place, so the migration below can reach
-            // any of them.
-            //
-            // This comment used to claim the section sorts to the TOP of the written file because
-            // "a digit is not a letter". That is backwards, and was corrected on 2026-09-18 by
-            // reading ConfigFile.Save: it groups by section and orders by the section NAME, so
-            // "Meta" sorts BELOW "1 - Core" and lands at the bottom. Purely cosmetic, and left
-            // alone on purpose - renaming the section now would orphan the stamp in every file
-            // already written, so every one of them would re-migrate and leave a dead [Meta] line
-            // behind. (Undertow, which had not shipped one yet, uses "0 - Meta" instead.)
-            //
-            // NO AcceptableValueRange, removed 2026-09-18. BepInEx CLAMPS an out-of-range value
-            // silently, so a ceiling here would one day quietly refuse the stamp and turn this into
-            // a migration that re-applies on every single boot. A stamp is not a dial.
-            ConfigVersion = cfg.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0,
-                "Which config LAYOUT this file was last written for. Not the mod's version, " +
-                "and not something to edit: the mod stamps it after migrating an older file, " +
-                "and reads it to know what is already done. Lower it and a migration that has " +
-                "already happened runs again; raise it and one that has not is skipped. A file " +
-                "written before this existed reads as 0, which is correct.");
-
-            // AFTER every bind: apply what Begin planned against the pre-bind snapshot, stamp the
-            // version, save. Skipped entirely on a fresh install, which needs no migrating.
-            ConfigMigration.Finish(cfg, ConfigVersion);
+            ConfigMigration.Begin(cfg, advanced);
+            try
+            {
+                // ==== 01 - General ====================================================================
+
+                VerboseLogging = cfg.Bind(GeneralSection, "VerboseLogging", false,
+                    "Prints a detailed log line for every pass of every system, instead of just summaries. " +
+                    "Turn it on to see the mod actually working, or while chasing down a problem.");
+
+                // ---- 01 - General, advanced file ----
+
+                TickBudgetMs = advanced.Bind(GeneralSection, "TickBudgetMs", 2.0f,
+                    new ConfigDescription(
+                        "Milliseconds of work this mod may do each frame, across every system combined. Raise " +
+                        "it only if systems visibly fall behind on a server with room to spare.",
+                        new AcceptableValueRange<float>(0.25f, 16.0f)));
+
+                MaxCreditSeconds = advanced.Bind(GeneralSection, "MaxCreditSeconds", 86400f,
+                    new ConfigDescription(
+                        "Caps how much real time, in seconds, a zone can catch up on drift the moment someone " +
+                        "visits it. Stops a zone left alone for months from getting months of built-up change " +
+                        "all at once.",
+                        new AcceptableValueRange<float>(60f, 2592000f)));
+
+                AutosaveIntervalSeconds = advanced.Bind(GeneralSection, "AutosaveIntervalSeconds", 120f,
+                    new ConfigDescription(
+                        "Seconds between writes of the world's drift data to disk. A save always happens on " +
+                        "shutdown regardless, so this only limits how much a crash could lose. Set to 0 to turn " +
+                        "off the periodic writes.",
+                        new AcceptableValueRange<float>(0f, 3600f)));
+
+                MessageMinIntervalSeconds = advanced.Bind(GeneralSection, "MessageMinIntervalSeconds", 8.0f,
+                    new ConfigDescription(
+                        "Minimum seconds between the on-screen messages this mod shows, so a burst of nearby " +
+                        "events cannot spam the screen at once. Doesn't apply to server-wide announcements such " +
+                        "as a storm arriving or a season changing.",
+                        new AcceptableValueRange<float>(0f, 300f)));
+
+                // ==== 02 - Season =====================================================================
+
+                EnableSeason = cfg.Bind(SeasonSection, "EnableSeason", true,
+                    "Turns season tracking on or off. The season it tracks feeds fire risk, plague growth, " +
+                    "farming yield and frost buildup elsewhere in this mod.");
+
+                SeasonLengthDays = cfg.Bind(SeasonSection, "SeasonLengthDays", 7,
+                    new ConfigDescription(
+                        "In-game days per season, when this mod is running its own season clock. Ignored " +
+                        "completely if Seasonality or Seasons (shudnal) is installed - their season is used " +
+                        "instead.",
+                        new AcceptableValueRange<int>(1, 120)));
+
+                AnnounceSeasonChange = cfg.Bind(SeasonSection, "AnnounceSeasonChange", true,
+                    "Shows an on-screen message when the season changes. Automatically skipped if " +
+                    "Seasonality or Seasons (shudnal) is installed, since they already show the player the " +
+                    "season.");
+
+                // ---- 02 - Season, advanced file ----
+
+                // Every other IWorldSystem in this mod already takes its cadence from config; this
+                // was the one of fifteen still returning a literal, which is the kind of gap nobody
+                // notices because the value is fine. 10s is what it has always run at.
+                SeasonIntervalSeconds = advanced.Bind(SeasonSection, "SeasonIntervalSeconds", 10f,
+                    new ConfigDescription(
+                        "Seconds between season checks, and how often the server tells clients the current " +
+                        "season. A player who joins mid-session is right within one of these.",
+                        new AcceptableValueRange<float>(1f, 300f)));
+
+                // ==== 03 - Weather ====================================================================
+
+                EnableWeather = cfg.Bind(WeatherSection, "EnableWeather", true,
+                    "Turns weather tracking and Devastating Storms on or off. A storm brings an on-screen " +
+                    "banner, gameplay effects across its area, and a chance of lightning.");
+
+                StormMinIntervalSeconds = cfg.Bind(WeatherSection, "StormMinIntervalSeconds", 3600f,
+                    new ConfigDescription(
+                        "Shortest real-world gap allowed between storms, in seconds. No new storm can begin " +
+                        "until at least this long has passed since the last one ended.",
+                        new AcceptableValueRange<float>(60f, 86400f)));
+
+                StormMaxIntervalSeconds = cfg.Bind(WeatherSection, "StormMaxIntervalSeconds", 10800f,
+                    new ConfigDescription(
+                        "Longest real-world gap between storms, in seconds. The chance of a storm starting " +
+                        "climbs from zero at the minimum gap to certain by this point.",
+                        new AcceptableValueRange<float>(120f, 172800f)));
+
+                StormDurationSeconds = cfg.Bind(WeatherSection, "StormDurationSeconds", 300f,
+                    new ConfigDescription(
+                        "How long a Devastating Storm lasts once it starts, in game seconds. It runs its full " +
+                        "course and ends on schedule whether or not any player is nearby.",
+                        new AcceptableValueRange<float>(30f, 3600f)));
+
+                StormsForceWeather = cfg.Bind(WeatherSection, "StormsForceWeather", false,
+                    "Gives a storm its own stormy sky instead of the world's weather. Left off, this mod " +
+                    "never touches the sky, avoiding a fight with another weather mod. Every player needs " +
+                    "the same value and a full restart to see it.");
+
+                StormForcedEnvironment = cfg.Bind(WeatherSection, "StormForcedEnvironment", "ThunderStorm",
+                    "The sky shown during a storm that rolls wet, used only when StormsForceWeather is on. " +
+                    "ThunderStorm is rainy, and rain stops storm lightning from striking.");
+
+                StormDryEnvironment = cfg.Bind(WeatherSection, "StormDryEnvironment", "Eikthyr",
+                    "The sky shown during a storm that rolls dry, used only when StormsForceWeather is on. " +
+                    "Eikthyr is dark and thundery with no rain, so lightning can strike.");
+
+                StormDryChance = cfg.Bind(WeatherSection, "StormDryChance", 0.5f,
+                    new ConfigDescription(
+                        "Chance that a storm rolls dry rather than wet, decided once when it starts. 0 makes " +
+                        "every storm wet and 1 makes every storm dry, with values in between giving each a " +
+                        "proportional chance.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                // ---- 03 - Weather, advanced file ----
+
+                EnableWind = advanced.Bind(WeatherSection, "EnableWind", true,
+                    "Turns wind tracking on or off. It reads the game's own wind for other systems to use " +
+                    "later - nothing currently changes if you turn it off.");
+
+                WeatherIntervalSeconds = advanced.Bind(WeatherSection, "WeatherIntervalSeconds", 5f,
+                    new ConfigDescription(
+                        "Seconds between weather checks - how quickly a storm's start or end is noticed. Kept " +
+                        "low on purpose, since this only reads state rather than computing anything heavy.",
+                        new AcceptableValueRange<float>(1f, 60f)));
+
+                StormRangeMeters = advanced.Bind(WeatherSection, "StormRangeMeters", 96f,
+                    new ConfigDescription(
+                        "Radius of a storm's effect, in metres. The on-screen banner and every gameplay effect " +
+                        "of the storm use this same distance, so they always agree on where it reaches.",
+                        new AcceptableValueRange<float>(32f, 1024f)));
+
+                StormPlagueSpreadMultiplier = advanced.Bind(WeatherSection, "StormPlagueSpreadMultiplier", 1.5f,
+                    new ConfigDescription(
+                        "How much faster plague spreads inside a Devastating Storm. 1.5 means plague spreads " +
+                        "50% faster within the storm's range than it does outside it.",
+                        new AcceptableValueRange<float>(0f, 10f)));
+
+                StormAvoidBaseMeters = advanced.Bind(WeatherSection, "StormAvoidBaseMeters", 30f,
+                    new ConfigDescription(
+                        "Storms will not anchor within this many metres of anything player-built. If every " +
+                        "online player is that close to their base, the storm holds off until someone steps " +
+                        "into the wild.",
+                        new AcceptableValueRange<float>(0f, 64f)));
+
+                WindIntervalSeconds = advanced.Bind(WeatherSection, "WindIntervalSeconds", 5f,
+                    new ConfigDescription(
+                        "Seconds between wind readings taken from the game. Wind is only ever read here, never " +
+                        "changed.",
+                        new AcceptableValueRange<float>(1f, 60f)));
+
+                // ==== 04 - Biome state ================================================================
+
+                EnableBiomeState = cfg.Bind(BiomeSection, "EnableBiomeState", true,
+                    "Turns biome state on or off — the zone-by-zone fertility, corruption, plague, scorch " +
+                    "and frost that slowly change and heal where players go.");
+
+                // ---- 04 - Biome state, advanced file ----
+
+                BiomeStateIntervalSeconds = advanced.Bind(BiomeSection, "BiomeStateIntervalSeconds", 30f,
+                    new ConfigDescription(
+                        "How often, in seconds, zone fertility, corruption, scorch and frost are recalculated. " +
+                        "Lower reacts to players faster; higher costs less.",
+                        new AcceptableValueRange<float>(5f, 600f)));
+
+                BiomeContactRadiusZones = advanced.Bind(BiomeSection, "BiomeContactRadiusZones", 1,
+                    new ConfigDescription(
+                        "How many zones around each player count as their presence, for drift and plague " +
+                        "spread. 0 is only their own zone; 1 covers the surrounding 3x3.",
+                        new AcceptableValueRange<int>(0, 3)));
+
+                BiomeMaxZonesPerTick = advanced.Bind(BiomeSection, "BiomeMaxZonesPerTick", 64,
+                    new ConfigDescription(
+                        "Most zones updated in a single drift pass. Anything left over continues on the next " +
+                        "pass, so nothing is skipped, only delayed.",
+                        new AcceptableValueRange<int>(1, 1024)));
+
+                BiomeRecoveryPerHour = advanced.Bind(BiomeSection, "BiomeRecoveryPerHour", 0.02f,
+                    new ConfigDescription(
+                        "How fast fertility, corruption, plague, scorch and frost heal per hour, on a 0 to 1 " +
+                        "scale. At the default, fully damaged land heals in about 50 hours.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                BiomeFrostPressurePerHour = advanced.Bind(BiomeSection, "BiomeFrostPressurePerHour", 0.015f,
+                    new ConfigDescription(
+                        "How fast frost builds up per hour in cold seasons, before the season's own cold " +
+                        "multiplier. Set to 0 to stop frost building at all.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                // ==== 05 - Fire =======================================================================
+
+                EnableFire = cfg.Bind(FireSection, "EnableFire", true,
+                    "Turns fire memory on or off — burned zones gain scorch that fades over time. Needs " +
+                    "FireFront installed; does nothing without it.");
+
+                StormLightningEnabled = cfg.Bind(FireSection, "StormLightningEnabled", true,
+                    "Turns storm lightning on or off: a rare bolt during a Devastating Storm that can start " +
+                    "a fire nearby, never in rain. Needs FireFront installed with its own fire spread " +
+                    "enabled, or nothing happens.");
+
+                LightningMeanMinutes = cfg.Bind(FireSection, "LightningMeanMinutes", 15f,
+                    new ConfigDescription(
+                        "Average minutes between lightning bolts while a storm holds at least one player under " +
+                        "a dry sky. Higher makes strikes rarer.",
+                        new AcceptableValueRange<float>(1f, 600f)));
+
+                // ---- 05 - Fire, advanced file ----
+
+                FireScorchIntervalSeconds = advanced.Bind(FireSection, "FireScorchIntervalSeconds", 10f,
+                    new ConfigDescription(
+                        "How often, in seconds, burning zones gain scorch. Only matters while FireFront is " +
+                        "installed.",
+                        new AcceptableValueRange<float>(2f, 120f)));
+
+                FireScorchPerMinute = advanced.Bind(FireSection, "FireScorchPerMinute", 0.02f,
+                    new ConfigDescription(
+                        "Scorch added per minute to a zone with any fire burning in it — the same rate whether " +
+                        "one fire burns there or several. At the default, continuous burning fully chars a zone " +
+                        "in about 50 minutes.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                LightningRingMinMeters = advanced.Bind(FireSection, "LightningRingMinMeters", 15f,
+                    new ConfigDescription(
+                        "Closest a lightning bolt can land to the player it strikes near. Kept well clear of " +
+                        "point-blank, so a strike is a threat, never a targeted hit.",
+                        new AcceptableValueRange<float>(0f, 50f)));
+
+                LightningRingMaxMeters = advanced.Bind(FireSection, "LightningRingMaxMeters", 40f,
+                    new ConfigDescription(
+                        "Farthest a lightning bolt can land from the player it strikes near. Kept close enough " +
+                        "that whoever it lands near can still hear it.",
+                        new AcceptableValueRange<float>(10f, 60f)));
+
+                LightningStandoffMeters = advanced.Bind(FireSection, "LightningStandoffMeters", 30f,
+                    new ConfigDescription(
+                        "No lightning bolt lands within this distance of anything player-built — pieces and " +
+                        "planted crops alike. A blocked bolt is simply lost, not rerolled.",
+                        new AcceptableValueRange<float>(0f, 64f)));
+
+                LightningIgniteRadiusMeters = advanced.Bind(FireSection, "LightningIgniteRadiusMeters", 2.5f,
+                    new ConfigDescription(
+                        "Ground radius set alight at a lightning strike, in metres. Kept small on purpose — one " +
+                        "bolt starts one fire, and the weather and land decide what it becomes.",
+                        new AcceptableValueRange<float>(0.5f, 8f)));
+
+                // ==== 06 - Plague =====================================================================
+
+                EnablePlague = cfg.Bind(PlagueSection, "EnablePlague", true,
+                    "Turns plague on or off — sickness that spreads between zones, grows or heals with the " +
+                    "seasons, and can sicken players who linger in it.");
+
+                PlagueGenesisEnabled = cfg.Bind(PlagueSection, "PlagueGenesisEnabled", true,
+                    "Lets plague start on its own — a rare roll seeds sickness on ground players visit, " +
+                    "more likely where it is corrupted or burnt, and more during storms. Off means " +
+                    "outbreaks only start by admin command.");
+
+                PlagueGenesisMeanHours = cfg.Bind(PlagueSection, "PlagueGenesisMeanHours", 12f,
+                    new ConfigDescription(
+                        "Average real hours of played time between new outbreaks starting on clean ground. " +
+                        "Blighted ground shortens this by up to five times; a storm overhead shortens it " +
+                        "further.",
+                        new AcceptableValueRange<float>(0.5f, 500f)));
+
+                // ---- 06 - Plague, advanced file ----
+
+                PlagueSpreadIntervalSeconds = advanced.Bind(PlagueSection, "PlagueSpreadIntervalSeconds", 60f,
+                    new ConfigDescription(
+                        "How often, in seconds, an infected zone can spread plague to a clean neighbour. Growth " +
+                        "and healing within an already-sick zone run on their own separate pace.",
+                        new AcceptableValueRange<float>(10f, 600f)));
+
+                PlagueGrowthPerHour = advanced.Bind(PlagueSection, "PlagueGrowthPerHour", 0.03f,
+                    new ConfigDescription(
+                        "How much plague grows per hour in an already-infected zone a player has visited, " +
+                        "before the season's own multiplier.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                PlagueCorruptionBoost = advanced.Bind(PlagueSection, "PlagueCorruptionBoost", 1.0f,
+                    new ConfigDescription(
+                        "How strongly corrupted ground speeds up plague growth there. At the default, fully " +
+                        "corrupted ground doubles how fast plague grows.",
+                        new AcceptableValueRange<float>(0f, 4f)));
+
+                PlagueSpreadThreshold = advanced.Bind(PlagueSection, "PlagueSpreadThreshold", 0.5f,
+                    new ConfigDescription(
+                        "Plague level a zone must reach before it can infect its neighbouring zones, on a 0 to " +
+                        "1 scale.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                PlagueSeedAmount = advanced.Bind(PlagueSection, "PlagueSeedAmount", 0.05f,
+                    new ConfigDescription(
+                        "Plague level a zone starts at the moment it is newly infected, on a 0 to 1 scale.",
+                        new AcceptableValueRange<float>(0.01f, 0.5f)));
+
+                PlagueSpreadChance = advanced.Bind(PlagueSection, "PlagueSpreadChance", 0.25f,
+                    new ConfigDescription(
+                        "Chance, checked on each spread pass, that a given neighbouring zone catches plague — " +
+                        "rolled once per zone even if several infected zones border it.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                PlagueMaxSpreadsPerTick = advanced.Bind(PlagueSection, "PlagueMaxSpreadsPerTick", 16,
+                    new ConfigDescription(
+                        "Most zones plague can spread into in a single pass, as a safety limit against a large " +
+                        "outbreak all rolling successfully at once.",
+                        new AcceptableValueRange<int>(1, 256)));
+
+                // ==== 07 - Ecology ====================================================================
+
+                EnableEcology = cfg.Bind(EcologySection, "EnableEcology", true,
+                    "Turns land corruption on or off. Corruption is the lasting scar heavy plague or fire " +
+                    "damage leaves behind, and left unchecked it feeds back into faster plague growth.");
+
+                // ---- 07 - Ecology, advanced file ----
+
+                EcologyIntervalSeconds = advanced.Bind(EcologySection, "EcologyIntervalSeconds", 60f,
+                    new ConfigDescription(
+                        "How often, in seconds, the game checks blighted zones for new corruption. Lower checks " +
+                        "more often for a small extra cost; it does not change how fast corruption itself " +
+                        "builds.",
+                        new AcceptableValueRange<float>(10f, 600f)));
+
+                EcologyCorruptionPerHour = advanced.Bind(EcologySection, "EcologyCorruptionPerHour", 0.01f,
+                    new ConfigDescription(
+                        "Base rate for how fast corruption builds in a zone whose plague or scorch has reached " +
+                        "its threshold; the actual rate climbs further as plague or scorch gets worse. Set to 0 " +
+                        "to stop corruption entirely.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                EcologyPlagueThreshold = advanced.Bind(EcologySection, "EcologyPlagueThreshold", 0.3f,
+                    new ConfigDescription(
+                        "Plague level at which a zone's land begins to corrupt, feeding a slow build-up that " +
+                        "outlasts the outbreak itself.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                EcologyScorchThreshold = advanced.Bind(EcologySection, "EcologyScorchThreshold", 0.3f,
+                    new ConfigDescription(
+                        "Scorch (fire-damage) level at which a zone's land begins to corrupt, feeding the same " +
+                        "slow build-up that plague damage does.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                // ==== 08 - Farming ====================================================================
+
+                EnableFarming = cfg.Bind(FarmingSection, "EnableFarming", true,
+                    "Turns crop soil fatigue on or off. Heavily planted zones tire out and grow crops more " +
+                    "slowly until the land is given a rest.");
+
+                // ---- 08 - Farming, advanced file ----
+
+                FarmingIntervalSeconds = advanced.Bind(FarmingSection, "FarmingIntervalSeconds", 45f,
+                    new ConfigDescription(
+                        "Seconds between sweeps that count how many crops are growing in each zone. Kept off a " +
+                        "round number on purpose so it does not land on the same moment as AwayFromHome's own " +
+                        "scan.",
+                        new AcceptableValueRange<float>(10f, 600f)));
+
+                FarmingDepletionPerCropHour = advanced.Bind(FarmingSection, "FarmingDepletionPerCropHour", 0.002f,
+                    new ConfigDescription(
+                        "How much each standing crop tires its zone's soil per hour. At the default, a field of " +
+                        "25 crops fully tires the land in about 20 hours of real playtime; resting the field " +
+                        "lets it recover.",
+                        new AcceptableValueRange<float>(0f, 0.5f)));
+
+                FarmingGrowthSlowdownAtFull = advanced.Bind(FarmingSection, "FarmingGrowthSlowdownAtFull", 2f,
+                    new ConfigDescription(
+                        "How much longer crops take to grow on fully tired soil, as a multiplier on grow time; " +
+                        "1 turns the slowdown off. Applied on players' own games, so set the same value on " +
+                        "every player's game.",
+                        new AcceptableValueRange<float>(1f, 5f)));
+
+                FarmingCropPrefabs = advanced.Bind(FarmingSection, "FarmingCropPrefabs", "sapling_carrot,sapling_turnip,sapling_onion,sapling_barley,sapling_flax,sapling_seedcarrot,sapling_seedturnip,sapling_seedonion,sapling_jotunpuffs,sapling_magecap",
+                    "Comma-separated list of crop names counted as farmland. Only these are checked for " +
+                    "soil depletion and slower growth on tired soil; anything not listed is unaffected.");
+
+                // ==== 09 - Health =====================================================================
+
+                EnableHealth = cfg.Bind(HealthSection, "EnableHealth", true,
+                    "Turns plague sickness and frost chill on or off. Standing on tainted or bitterly cold " +
+                    "ground weakens stamina and health regen until the player leaves or recovers.");
+
+                FrostChillEnabled = cfg.Bind(HealthSection, "FrostChillEnabled", true,
+                    "Turns frost chill on or off: high zone frost slows stamina and health regen where " +
+                    "vanilla would not call it cold. Fire, shelter and frost resistance cancel it. Read on " +
+                    "each player's own game.");
+
+                // ---- 09 - Health, advanced file ----
+
+                HealthIntervalSeconds = advanced.Bind(HealthSection, "HealthIntervalSeconds", 5f,
+                    new ConfigDescription(
+                        "How often, in seconds, online players are checked for plague exposure. Lower catches " +
+                        "someone stepping into an outbreak sooner, at a small extra cost.",
+                        new AcceptableValueRange<float>(1f, 60f)));
+
+                ExposureMinutesToMax = advanced.Bind(HealthSection, "ExposureMinutesToMax", 30f,
+                    new ConfigDescription(
+                        "Minutes of standing on fully plagued ground before a player's sickness reaches its " +
+                        "worst. Ground that is only partly tainted builds sickness proportionally slower.",
+                        new AcceptableValueRange<float>(5f, 240f)));
+
+                ExposureRecoveryMinutes = advanced.Bind(HealthSection, "ExposureRecoveryMinutes", 20f,
+                    new ConfigDescription(
+                        "Minutes for a player's sickness to clear fully once they leave plagued ground, from " +
+                        "its worst back to none.",
+                        new AcceptableValueRange<float>(2f, 240f)));
+
+                ExposureRestedRecoveryMultiplier = advanced.Bind(HealthSection, "ExposureRestedRecoveryMultiplier", 2f,
+                    new ConfigDescription(
+                        "How much faster sickness clears while the player has the game's own Rested status. At " +
+                        "the default, being Rested roughly doubles recovery speed.",
+                        new AcceptableValueRange<float>(1f, 10f)));
+
+                ExposurePoisonResistMultiplier = advanced.Bind(HealthSection, "ExposurePoisonResistMultiplier", 0.5f,
+                    new ConfigDescription(
+                        "How much slower sickness builds up while poison-resistant, from any mead, gear or " +
+                        "food. At the default, protection halves how fast exposure builds.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                ExposureTier1 = advanced.Bind(HealthSection, "ExposureTier1", 0.25f,
+                    new ConfigDescription(
+                        "Exposure level at which the sickness first appears: the status icon shows and stamina " +
+                        "regen starts to suffer. Set the same value on every player's game.",
+                        new AcceptableValueRange<float>(0.01f, 1f)));
+
+                ExposureTier2 = advanced.Bind(HealthSection, "ExposureTier2", 0.5f,
+                    new ConfigDescription(
+                        "Exposure level at which health regen also starts to suffer, on top of the stamina " +
+                        "penalty from the first tier. Set the same value on every player's game.",
+                        new AcceptableValueRange<float>(0.01f, 1f)));
+
+                ExposureTier3 = advanced.Bind(HealthSection, "ExposureTier3", 0.8f,
+                    new ConfigDescription(
+                        "Exposure level at which the sickness is announced as being at its worst. Only changes " +
+                        "that announcement — the regen penalties already ramp smoothly past this point.",
+                        new AcceptableValueRange<float>(0.01f, 1f)));
+
+                SicknessStaminaRegenAtTier1 = advanced.Bind(HealthSection, "SicknessStaminaRegenAtTier1", 0.85f,
+                    new ConfigDescription(
+                        "Stamina regen multiplier the instant the first sickness tier is crossed, so the " +
+                        "penalty is felt right away rather than easing in unnoticed. Set the same value on " +
+                        "every player's game.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                SicknessStaminaRegenAtMax = advanced.Bind(HealthSection, "SicknessStaminaRegenAtMax", 0.3f,
+                    new ConfigDescription(
+                        "Stamina regen multiplier at full exposure, easing down from the first tier's penalty " +
+                        "as exposure climbs. Set the same value on every player's game.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                SicknessHealthRegenAtTier2 = advanced.Bind(HealthSection, "SicknessHealthRegenAtTier2", 0.8f,
+                    new ConfigDescription(
+                        "Health regen multiplier the instant the second sickness tier is crossed — the wound " +
+                        "half of the sickness arriving after the stamina fails. Set the same value on every " +
+                        "player's game.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                SicknessHealthRegenAtMax = advanced.Bind(HealthSection, "SicknessHealthRegenAtMax", 0.38f,
+                    new ConfigDescription(
+                        "Health regen multiplier at full exposure, easing down from the second tier's penalty " +
+                        "as exposure climbs. Set the same value on every player's game.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                FrostChillThreshold = advanced.Bind(HealthSection, "FrostChillThreshold", 0.5f,
+                    new ConfigDescription(
+                        "Zone frost level at which the chill effect takes hold of a player standing in it. Set " +
+                        "the same value on every player's game.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                ChillStaminaRegenMultiplier = advanced.Bind(HealthSection, "ChillStaminaRegenMultiplier", 0.8f,
+                    new ConfigDescription(
+                        "Stamina regen multiplier while chilled. Set the same value on every player's game.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                ChillHealthRegenMultiplier = advanced.Bind(HealthSection, "ChillHealthRegenMultiplier", 0.7f,
+                    new ConfigDescription(
+                        "Health regen multiplier while chilled. Set the same value on every player's game.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                // ==== 10 - Consequence ================================================================
+
+                EnableConsequence = cfg.Bind(ConsequenceSection, "EnableConsequence", true,
+                    "Turns land consequences on or off: barren pickables, tougher spawns, sickened wildlife " +
+                    "and dying crops on badly plagued, scorched or corrupted ground.");
+
+                ConsequenceBarren = cfg.Bind(ConsequenceSection, "ConsequenceBarren", true,
+                    "Stops berries, mushrooms and other pickables from being harvested on badly plagued or " +
+                    "scorched ground, with an in-world message explaining why.");
+
+                ConsequenceEmpower = cfg.Bind(ConsequenceSection, "ConsequenceEmpower", true,
+                    "Gives hostile creatures a better chance of spawning as a stronger, starred variant on " +
+                    "badly corrupted ground. Passive wildlife is never affected.");
+
+                ConsequenceSicken = cfg.Bind(ConsequenceSection, "ConsequenceSicken", true,
+                    "Slows and sickens passive wildlife (deer, boars, hares) standing on plagued ground. " +
+                    "The effect wears off once the animal leaves or the plague clears.");
+
+                ConsequenceWither = cfg.Bind(ConsequenceSection, "ConsequenceWither", true,
+                    "Kills crops planted in badly blighted soil once they would otherwise finish growing. " +
+                    "Replanting after the land recovers is the fix.");
+
+                AnnounceConsequences = cfg.Bind(ConsequenceSection, "AnnounceConsequences", true,
+                    "Shows a one-line message the first time a player enters a zone with barren ground, " +
+                    "tougher spawns, sickness or dying crops. Sent once per zone, per session.");
+
+                // ---- 10 - Consequence, advanced file ----
+
+                ConsequenceIntervalSeconds = advanced.Bind(ConsequenceSection, "ConsequenceIntervalSeconds", 10f,
+                    new ConfigDescription(
+                        "Seconds between checks that announce a zone's consequences to players near it. The " +
+                        "effects themselves apply continuously regardless of this setting — it only paces the " +
+                        "announcement.",
+                        new AcceptableValueRange<float>(2f, 120f)));
+
+                BarrenPlagueThreshold = advanced.Bind(ConsequenceSection, "BarrenPlagueThreshold", 0.4f,
+                    new ConfigDescription(
+                        "Plague level in a zone at or above which pickables there stop yielding anything.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                BarrenScorchThreshold = advanced.Bind(ConsequenceSection, "BarrenScorchThreshold", 0.5f,
+                    new ConfigDescription(
+                        "Scorch level in a zone at or above which pickables there stop yielding anything — ash " +
+                        "bears nothing.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                SickenPlagueThreshold = advanced.Bind(ConsequenceSection, "SickenPlagueThreshold", 0.4f,
+                    new ConfigDescription(
+                        "Plague level in a zone at or above which passive wildlife there starts to sicken.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                SickenSpeedPenalty = advanced.Bind(ConsequenceSection, "SickenSpeedPenalty", 0.35f,
+                    new ConfigDescription(
+                        "How much slower sickened wildlife moves, as a fraction of its normal speed — for " +
+                        "example, 0.5 means half speed. This only slows animals; it never kills them.",
+                        new AcceptableValueRange<float>(0f, 0.9f)));
+
+                EmpowerCorruptionThreshold = advanced.Bind(ConsequenceSection, "EmpowerCorruptionThreshold", 0.5f,
+                    new ConfigDescription(
+                        "Corruption level in a zone above which hostile spawns start getting better odds of " +
+                        "coming up stronger.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                EmpowerLevelUpMultiplierAtFull = advanced.Bind(ConsequenceSection, "EmpowerLevelUpMultiplierAtFull", 6f,
+                    new ConfigDescription(
+                        "How much better the odds of a stronger spawn get on fully corrupted ground, as a " +
+                        "multiplier on the game's own level-up chance.",
+                        new AcceptableValueRange<float>(1f, 10f)));
+
+                CropWitherBlightThreshold = advanced.Bind(ConsequenceSection, "CropWitherBlightThreshold", 0.6f,
+                    new ConfigDescription(
+                        "Blight level (whichever is worse, plague or corruption) at which planted crops wither " +
+                        "and die outright.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                WildlifePrefabs = advanced.Bind(ConsequenceSection, "WildlifePrefabs", "Deer,Boar,Hare",
+                    "Comma-separated list of creature names counted as passive wildlife — these can sicken " +
+                    "from plague but are never turned into a stronger spawn by corruption.");
+
+                // ==== 11 - Rivalry ====================================================================
+
+                EnableRivalry = cfg.Bind(RivalrySection, "EnableRivalry", true,
+                    "Turns the rivalry system on or off. It tracks who helps or harms each area, feeding " +
+                    "grudges, contested ground, and titles that reward or shame players for how they treat " +
+                    "the land.");
+
+                AnnounceContests = cfg.Bind(RivalrySection, "AnnounceContests", true,
+                    "Announce contest outcomes to nearby players: an area changing hands between two " +
+                    "rivals, or a spawn war on contested ground finally resolving.");
+
+                EnableNemesis = cfg.Bind(RivalrySection, "EnableNemesis", true,
+                    "Turns nemesis marking on or off: the creature that kills a player is marked, levelled " +
+                    "up and named for who it slew. Read from the killed player's own game, so give every " +
+                    "player the same value.");
+
+                NemesisMaxLevel = cfg.Bind(RivalrySection, "NemesisMaxLevel", 3,
+                    new ConfigDescription(
+                        "Highest level a creature can reach by killing players (level 3 is two stars). Bosses " +
+                        "are marked but never levelled. Read from the killed player's own game, so give every " +
+                        "player the same value.",
+                        new AcceptableValueRange<int>(1, 5)));
+
+                // ---- 11 - Rivalry, advanced file ----
+
+                RivalryIntervalSeconds = advanced.Bind(RivalrySection, "RivalryIntervalSeconds", 30f,
+                    new ConfigDescription(
+                        "How often the rivalry system re-checks grudges, care, and tending progress, in " +
+                        "seconds.",
+                        new AcceptableValueRange<float>(5f, 300f)));
+
+                RivalryHalfLifeHours = advanced.Bind(RivalrySection, "RivalryHalfLifeHours", 48f,
+                    new ConfigDescription(
+                        "Real hours for a player's recorded harm and care in an area to fade by half. Lower " +
+                        "makes the land forgive faster; higher makes both grudges and goodwill linger longer.",
+                        new AcceptableValueRange<float>(1f, 720f)));
+
+                CarePerHealedPoint = advanced.Bind(RivalrySection, "CarePerHealedPoint", 1f,
+                    new ConfigDescription(
+                        "Credit booked to players nearby when damaged land heals, split among everyone whose " +
+                        "presence covers it — it offsets grudges and counts toward the Warden title.",
+                        new AcceptableValueRange<float>(0f, 10f)));
+
+                TendingCarePerPlant = advanced.Bind(RivalrySection, "TendingCarePerPlant", 0.05f,
+                    new ConfigDescription(
+                        "Credit booked to a crop's planter, once per plant ever planted — replanting the same " +
+                        "spot again earns nothing extra.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                ArsonHarmPerScorchPoint = advanced.Bind(RivalrySection, "ArsonHarmPerScorchPoint", 1f,
+                    new ConfigDescription(
+                        "Blame booked against whoever started a fire, per point of scorch it burns into an area " +
+                        "— fully charring one area blames them one point at the default.",
+                        new AcceptableValueRange<float>(0f, 10f)));
+
+                GrudgeScale = advanced.Bind(RivalrySection, "GrudgeScale", 1f,
+                    new ConfigDescription(
+                        "How strongly a player's harm to an area, minus any care they've since given it, turns " +
+                        "into a grudge against them specifically. Higher turns the land against wrongdoers " +
+                        "faster.",
+                        new AcceptableValueRange<float>(0f, 10f)));
+
+                GrudgePickRefuse = advanced.Bind(RivalrySection, "GrudgePickRefuse", 0.25f,
+                    new ConfigDescription(
+                        "Grudge level at which an area's berries and mushrooms refuse to be picked by the " +
+                        "player who earned it — everyone else can still pick them. Checked in each player's own " +
+                        "game.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                AshbringerGrudge = advanced.Bind(RivalrySection, "AshbringerGrudge", 0.5f,
+                    new ConfigDescription(
+                        "Grudge level, in a player's single worst area, needed to earn the Ashbringer title.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                CareDominanceFloor = advanced.Bind(RivalrySection, "CareDominanceFloor", 0.2f,
+                    new ConfigDescription(
+                        "Minimum care a player needs in an area before the land can remember them as its carer " +
+                        "— below this, nobody holds that ground.",
+                        new AcceptableValueRange<float>(0.05f, 5f)));
+
+                HarmDominanceFloor = advanced.Bind(RivalrySection, "HarmDominanceFloor", 0.2f,
+                    new ConfigDescription(
+                        "Minimum harm a player needs in an area before the land can remember them as its " +
+                        "dominant despoiler.",
+                        new AcceptableValueRange<float>(0.05f, 5f)));
+
+                ContestHysteresis = advanced.Bind(RivalrySection, "ContestHysteresis", 0.15f,
+                    new ConfigDescription(
+                        "How far a challenger's care or harm must exceed the current holder's before they take " +
+                        "over an area (0.15 = 15% higher). Stops ground flickering between two close rivals.",
+                        new AcceptableValueRange<float>(0f, 1f)));
+
+                MercyRecoveryBonus = advanced.Bind(RivalrySection, "MercyRecoveryBonus", 0.25f,
+                    new ConfigDescription(
+                        "Extra healing speed for an area while its remembered carer is nearby (0.25 = 25% " +
+                        "faster recovery).",
+                        new AcceptableValueRange<float>(0f, 2f)));
+
+                MercySicknessBonus = advanced.Bind(RivalrySection, "MercySicknessBonus", 0.5f,
+                    new ConfigDescription(
+                        "Faster recovery from plague sickness while standing on ground you're remembered as the " +
+                        "carer of (0.5 = 50% faster).",
+                        new AcceptableValueRange<float>(0f, 3f)));
+
+                WardenZonesHeld = advanced.Bind(RivalrySection, "WardenZonesHeld", 3,
+                    new ConfigDescription(
+                        "Number of areas a player must be remembered as the carer of, at once, to earn the " +
+                        "Warden title.",
+                        new AcceptableValueRange<int>(1, 64)));
+
+                DespoilerZonesHeld = advanced.Bind(RivalrySection, "DespoilerZonesHeld", 3,
+                    new ConfigDescription(
+                        "Number of areas a player must be remembered as the dominant harmer of, at once, to " +
+                        "earn the Despoiler title.",
+                        new AcceptableValueRange<int>(1, 64)));
+
+                ContestBlightThreshold = advanced.Bind(RivalrySection, "ContestBlightThreshold", 0.5f,
+                    new ConfigDescription(
+                        "How plagued or corrupted an area must be, whichever is worse, before it can become " +
+                        "contested war ground.",
+                        new AcceptableValueRange<float>(0.1f, 1f)));
+
+                ContestCareThreshold = advanced.Bind(RivalrySection, "ContestCareThreshold", 0.3f,
+                    new ConfigDescription(
+                        "Total care, summed across everyone, a blighted area needs before it counts as actively " +
+                        "contested rather than simply lost.",
+                        new AcceptableValueRange<float>(0.05f, 5f)));
+
+                StormContestMultiplier = advanced.Bind(RivalrySection, "StormContestMultiplier", 2f,
+                    new ConfigDescription(
+                        "How much fiercer a contested area's war gets while a Devastating Storm passes over it. " +
+                        "1 turns this off.",
+                        new AcceptableValueRange<float>(1f, 5f)));
+
+                ContestStarBonus = advanced.Bind(RivalrySection, "ContestStarBonus", 1f,
+                    new ConfigDescription(
+                        "Extra chance for hostile spawns to come up starred, per point of war intensity, on " +
+                        "contested ground. Read from the nearby player's own game, not the server's.",
+                        new AcceptableValueRange<float>(0f, 5f)));
+
+                ContestWildSpawnChance = advanced.Bind(RivalrySection, "ContestWildSpawnChance", 100f,
+                    new ConfigDescription(
+                        "How likely nearby wildlife is to spawn while a player stands on contested ground, as a " +
+                        "percentage. Applied from that player's own game, not the server's.",
+                        new AcceptableValueRange<float>(0f, 100f)));
+
+                ContestWildMaxSpawned = advanced.Bind(RivalrySection, "ContestWildMaxSpawned", 15,
+                    new ConfigDescription(
+                        "Cap on concurrent animals of each wildlife type while a spawn war is underway, applied " +
+                        "from each player's own game, not the server's.",
+                        new AcceptableValueRange<int>(1, 20)));
+
+                // ==== 12 - Relic ======================================================================
+
+                EnableRelic = cfg.Bind(RelicSection, "EnableRelic", true,
+                    "Turns relic stones on or off. Zones where a fire fully heals, a plague is cured, or a " +
+                    "spawn war resolves can raise a lasting blessed or cursed landmark that changes how " +
+                    "fast the land heals and how tough creatures nearby become.");
+
+                // ---- 12 - Relic, advanced file ----
+
+                RelicIntervalSeconds = advanced.Bind(RelicSection, "RelicIntervalSeconds", 30f,
+                    new ConfigDescription(
+                        "Seconds between checks for a zone whose story has just completed and is ready to raise " +
+                        "a stone.",
+                        new AcceptableValueRange<float>(5f, 600f)));
+
+                FireRelicPeakThreshold = advanced.Bind(RelicSection, "FireRelicPeakThreshold", 0.5f,
+                    new ConfigDescription(
+                        "How badly a zone must have scorched before healing it fully afterwards raises a " +
+                        "blessed stone there.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                PlagueRelicPeakThreshold = advanced.Bind(RelicSection, "PlagueRelicPeakThreshold", 0.5f,
+                    new ConfigDescription(
+                        "How bad a zone's plague must have gotten before curing it fully afterwards raises a " +
+                        "blessed stone there.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                RelicBlessedRecoveryMult = advanced.Bind(RelicSection, "RelicBlessedRecoveryMult", 1.25f,
+                    new ConfigDescription(
+                        "Multiplies how fast a damaged zone heals while blessed ground stands there. Above 1 " +
+                        "speeds up recovery.",
+                        new AcceptableValueRange<float>(1f, 3f)));
+
+                RelicCursedRecoveryMult = advanced.Bind(RelicSection, "RelicCursedRecoveryMult", 0.8f,
+                    new ConfigDescription(
+                        "Multiplies how fast a damaged zone heals while cursed ground stands there. Below 1 " +
+                        "slows recovery down.",
+                        new AcceptableValueRange<float>(0.25f, 1f)));
+
+                RelicBlessedExposureDrainMult = advanced.Bind(RelicSection, "RelicBlessedExposureDrainMult", 1.5f,
+                    new ConfigDescription(
+                        "How much faster plague sickness fades from a player standing on blessed ground. It " +
+                        "only speeds up healing off the sickness, never shields against catching it in the " +
+                        "first place.",
+                        new AcceptableValueRange<float>(1f, 3f)));
+
+                RelicCursedExposureAccrualMult = advanced.Bind(RelicSection, "RelicCursedExposureAccrualMult", 1.25f,
+                    new ConfigDescription(
+                        "How much faster plague sickness builds up on a player standing on cursed ground.",
+                        new AcceptableValueRange<float>(1f, 3f)));
+
+                RelicCursedStarBonus = advanced.Bind(RelicSection, "RelicCursedStarBonus", 0.25f,
+                    new ConfigDescription(
+                        "Extra chance for hostile spawns to come up starred while standing on cursed ground, " +
+                        "stacking with the corruption bonus and any active spawn war.",
+                        new AcceptableValueRange<float>(0f, 2f)));
+
+                RelicVandalHarm = advanced.Bind(RelicSection, "RelicVandalHarm", 0.5f,
+                    new ConfigDescription(
+                        "How much blame is booked against a player who destroys a relic stone. Has no effect " +
+                        "unless rivalry is also turned on.",
+                        new AcceptableValueRange<float>(0f, 5f)));
+
+                RelicPrefabCandidates = advanced.Bind(RelicSection, "RelicPrefabCandidates", "highstone,widestone",
+                    "Comma-separated names of existing game objects to try, in order, for the relic stone's " +
+                    "shape — the first one the game recognises is used. Keep this the same on every " +
+                    "player's copy of the config for a consistent result.");
+
+                // ==== 13 - Titles =====================================================================
+
+                EnableTitle = cfg.Bind(TitlesSection, "EnableTitle", true,
+                    "Turns earned titles on or off — names shown under a player's nameplate for what they " +
+                    "have done in the world, such as getting caught in a storm or walking into a badly " +
+                    "plagued zone.");
+
+                AnnounceTitles = cfg.Bind(TitlesSection, "AnnounceTitles", true,
+                    "Announces a newly earned title to everyone on the server. Titles are rare by design, " +
+                    "so this should not spam chat.");
+
+                // ---- 13 - Titles, advanced file ----
+
+                TitleIntervalSeconds = advanced.Bind(TitlesSection, "TitleIntervalSeconds", 10f,
+                    new ConfigDescription(
+                        "Seconds between checks of online players for newly earned titles.",
+                        new AcceptableValueRange<float>(2f, 120f)));
+
+                WinterbornSeconds = advanced.Bind(TitlesSection, "WinterbornSeconds", 1800f,
+                    new ConfigDescription(
+                        "Seconds a player must be online during Winter to earn the Winterborn title. Restarting " +
+                        "the server resets everyone's progress toward it.",
+                        new AcceptableValueRange<float>(60f, 86400f)));
+
+                // ==== 14 - World state ================================================================
+
+                EnableWorldState = cfg.Bind(WorldSection, "EnableWorldState", true,
+                    "Turns the world's overall condition on or off — whether the land as a whole is judged " +
+                    "Flourishing, Ailing or Stricken, announced when it changes.");
+
+                // ---- 14 - World state, advanced file ----
+
+                WorldStateIntervalSeconds = advanced.Bind(WorldSection, "WorldStateIntervalSeconds", 30f,
+                    new ConfigDescription(
+                        "Seconds between recalculations of the world's overall condition (Flourishing, Ailing " +
+                        "or Stricken).",
+                        new AcceptableValueRange<float>(10f, 600f)));
+
+                WorldFlourishingBurden = advanced.Bind(WorldSection, "WorldFlourishingBurden", 0.25f,
+                    new ConfigDescription(
+                        "Total burden — a combined score of plague, corruption, scorch, soil tiredness and " +
+                        "frost across the world — at or below which the land counts as Flourishing.",
+                        new AcceptableValueRange<float>(0f, 10f)));
+
+                WorldAilingBurden = advanced.Bind(WorldSection, "WorldAilingBurden", 4f,
+                    new ConfigDescription(
+                        "Total burden at which the land turns Ailing. Keep this above the Flourishing " +
+                        "threshold, since burden is the same combined score described there.",
+                        new AcceptableValueRange<float>(0.5f, 100f)));
+
+                WorldStrickenBurden = advanced.Bind(WorldSection, "WorldStrickenBurden", 12f,
+                    new ConfigDescription(
+                        "Total burden at which the land is judged Stricken, the worst condition. Keep it " +
+                        "comfortably above the Ailing threshold.",
+                        new AcceptableValueRange<float>(1f, 500f)));
+
+                WorldStormBurden = advanced.Bind(WorldSection, "WorldStormBurden", 1f,
+                    new ConfigDescription(
+                        "Extra burden added to the total while a Devastating Storm is active, so a stormy " +
+                        "moment can nudge the land's judged condition worse.",
+                        new AcceptableValueRange<float>(0f, 20f)));
+
+                // ==== 15 - Visuals ====================================================================
+
+                EnableZoneSync = cfg.Bind(VisualsSection, "EnableZoneSync", true,
+                    "Turns zone-state syncing on or off. It feeds the plague fog, frost breath and " +
+                    "scorch-ash visuals; a connecting player loses all three when it's off, though a player " +
+                    "hosting their own game keeps seeing them regardless.");
+
+                PlagueFogEnabled = cfg.Bind(VisualsSection, "PlagueFogEnabled", true,
+                    "Client-side: shows a low, grey-green mist over plagued ground on your own screen. " +
+                    "Every player chooses this for themselves; purely visual.");
+
+                FrostBreathEnabled = cfg.Bind(VisualsSection, "FrostBreathEnabled", true,
+                    "Client-side: fogs your character's breath on land whose cold has built up, as an early " +
+                    "warning before the chill effect itself sets in.");
+
+                ScorchAshEnabled = cfg.Bind(VisualsSection, "ScorchAshEnabled", true,
+                    "Client-side: drifts grey ash over badly burned ground on your own screen, thinning as " +
+                    "the land heals. Separate from FireFront's own flames and scorched-ground marks, which " +
+                    "are unaffected by this setting.");
+
+                RelicRunesEnabled = cfg.Bind(VisualsSection, "RelicRunesEnabled", true,
+                    "Client-side: shows rune glyphs rising around standing relic stones on your own screen " +
+                    "— gold on blessed ground, red on cursed.");
+
+                // ---- 15 - Visuals, advanced file ----
+
+                ZoneSyncIntervalSeconds = advanced.Bind(VisualsSection, "ZoneSyncIntervalSeconds", 10f,
+                    new ConfigDescription(
+                        "Seconds between zone-state updates sent to each connected player. Lowering it makes " +
+                        "the plague fog, frost breath and ash visuals catch up to real changes sooner, at the " +
+                        "cost of more frequent small network pushes.",
+                        new AcceptableValueRange<float>(2f, 120f)));
+
+                ZoneSyncRadiusZones = advanced.Bind(VisualsSection, "ZoneSyncRadiusZones", 2,
+                    new ConfigDescription(
+                        "How many zones out from each player's position are sent to them each push. A larger " +
+                        "radius covers a bigger area around the player but sends more data per push.",
+                        new AcceptableValueRange<int>(1, 4)));
+
+                PlagueFogDensity = advanced.Bind(VisualsSection, "PlagueFogDensity", 1f,
+                    new ConfigDescription(
+                        "Client-side: how thick the plague mist looks on your screen. Lightly plagued ground " +
+                        "never shows fog regardless of this setting, so a fresh outbreak stays hidden until it " +
+                        "has properly taken hold.",
+                        new AcceptableValueRange<float>(0f, 4f)));
+
+                FrostBreathFloor = advanced.Bind(VisualsSection, "FrostBreathFloor", 0.3f,
+                    new ConfigDescription(
+                        "Client-side: how much zone frost is needed before your breath starts to fog. Kept " +
+                        "below the chill effect's own threshold so you see the warning before the cold actually " +
+                        "bites.",
+                        new AcceptableValueRange<float>(0.05f, 1f)));
+
+                ScorchAshDensity = advanced.Bind(VisualsSection, "ScorchAshDensity", 1f,
+                    new ConfigDescription(
+                        "Client-side: how much ash drifts over burned ground on your screen. Lightly scorched " +
+                        "ground never shows ash regardless of this setting.",
+                        new AcceptableValueRange<float>(0f, 4f)));
+
+                // Bound LAST, with every other key already in place, so the migration below can reach
+                // any of them.
+                //
+                // This comment used to claim the section sorts to the TOP of the written file because
+                // "a digit is not a letter". That is backwards, and was corrected on 2026-09-18 by
+                // reading ConfigFile.Save: it groups by section and orders by the section NAME, so
+                // "Meta" sorts BELOW "1 - Core" and lands at the bottom. Purely cosmetic, and left
+                // alone on purpose - renaming the section now would orphan the stamp in every file
+                // already written, so every one of them would re-migrate and leave a dead [Meta] line
+                // behind. (Undertow, which had not shipped one yet, uses "0 - Meta" instead.)
+                //
+                // NO AcceptableValueRange, removed 2026-09-18. BepInEx CLAMPS an out-of-range value
+                // silently, so a ceiling here would one day quietly refuse the stamp and turn this into
+                // a migration that re-applies on every single boot. A stamp is not a dial.
+                ConfigVersion = cfg.Bind(ConfigLedger.MetaSection, ConfigLedger.VersionKey, 0,
+                    "Tracks which layout version this mod's config files have already been updated to. Set " +
+                    "automatically by the mod — do not edit it by hand, or a settings update may be " +
+                    "reapplied or skipped incorrectly.");
+            }
+            catch
+            {
+                // A bind that throws stops the mod loading, as it always did. Nothing has been written:
+                // both files keep exactly what they held before this boot.
+                ConfigMigration.Abandon(cfg, advanced);
+                throw;
+            }
+
+            // AFTER every bind: apply what Begin planned against the pre-bind snapshot, save the advanced
+            // file, drop the old lines, stamp the version, save the main file. A fresh install has
+            // nothing to apply or drop, but both files are still written and stamped here.
+            ConfigMigration.Finish(cfg, advanced, ConfigVersion);
         }
     }
 }
