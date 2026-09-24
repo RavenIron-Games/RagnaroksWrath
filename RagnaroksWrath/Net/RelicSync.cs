@@ -143,6 +143,7 @@ namespace RavenIron.RagnaroksWrath.Net
 
         private static void RPC_RelicSet(long sender, int zx, int zy, int type, bool cursed, int day)
         {
+            if (!SenderGuard.FromServer(sender)) return;   // only the server says where relics stand
             var zone = new ZoneKey(zx, zy);
             if (type == RelicMath.None) { _cache.Remove(zone); return; }
             if (type < RelicMath.Fire || type > RelicMath.Era) return;
@@ -151,6 +152,7 @@ namespace RavenIron.RagnaroksWrath.Net
 
         private static void RPC_RelicPlace(long sender, int zx, int zy, int type, bool cursed)
         {
+            if (!SenderGuard.FromServer(sender)) return;   // only the server asks for a stone
             try
             {
                 // The server retries until confirmed; a repeat for ground this client
@@ -231,7 +233,44 @@ namespace RavenIron.RagnaroksWrath.Net
         {
             // Only the authority acts; a client receiving a stray report ignores it.
             if (!RelicLedger.IsLoaded) return;
-            Systems.World.RelicSystem.OnRelicBroken(new ZoneKey(zx, zy), vandalPlayerId);
+            var zone = new ZoneKey(zx, zy);
+            Systems.World.RelicSystem.OnRelicBroken(zone, PlausibleVandal(zone, vandalPlayerId));
+        }
+
+        /// <summary>
+        /// The reported vandal, or 0 when that player is not online within two zones of the stone.
+        /// The report comes from a client, so a player id it names is only believed when that
+        /// player could have swung: nobody can be framed from across the map. The stone still
+        /// lifts either way.
+        /// </summary>
+        private static long PlausibleVandal(ZoneKey zone, long vandalPlayerId)
+        {
+            if (vandalPlayerId == 0) return 0;
+            try
+            {
+                ZNet znet = ZNet.instance;   // Unity null: never ?. on a UnityEngine.Object
+                List<ZDO> characters = znet != null ? znet.GetAllCharacterZDOS() : null;
+                if (characters != null)
+                {
+                    for (int i = 0; i < characters.Count; i++)
+                    {
+                        ZDO zdo = characters[i];
+                        if (zdo == null || !zdo.IsValid()) continue;
+                        if (zdo.GetLong(ZDOVars.s_playerID, 0L) != vandalPlayerId) continue;
+                        ZoneKey at = ZoneKey.FromWorldPos(zdo.GetPosition());
+                        if (Math.Abs(at.X - zone.X) <= 2 && Math.Abs(at.Y - zone.Y) <= 2) return vandalPlayerId;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                RagnaroksWrath.Log.LogWarning($"RelicSync: vandal check failed: {ex.Message}");
+            }
+
+            RagnaroksWrath.Log.LogInfo(
+                $"RelicSync: relic in {zone} reported broken by player {vandalPlayerId}, who is not " +
+                "near it - no harm booked.");
+            return 0;
         }
 
         /// <summary>Client confirmation: the stone stands. No-target routed RPC to the server.</summary>
