@@ -19,16 +19,25 @@ config keys and no save formats change.
   ended whatever was running: a raid on a base, or Valkyrie's Cargo's merchant visit. A storm that
   comes due during another event now waits, and starts once that event is over. If the storm event
   is missing from the game's list, the storm no longer starts at all (the log says why), where
-  before it ended the running event and announced a storm that never came.
+  before it ended the running event and announced a storm that never came. One side effect: a
+  vanilla raid pauses while no player is near it, so a raid everyone walked away from can hold
+  storms back until someone returns to it or the game replaces it with another event.
 - **Titles no longer swap back and forth.** Stormrider, Plaguewalker and Winterborn were awarded
   again on every title check while their condition held. Two that held together (plague in winter,
   a storm over plague) swapped every check, each swap announced to everyone. Every title is now
-  earned once, when its condition starts; Winterborn once per winter. Titles earned at the same
-  moment give one announcement.
-- **Arson blame stays with the arsonist's own fire.** FireFront reports a single igniter for the
-  whole map, so while one player's fire burned, every other fire anywhere was booked as their harm.
-  Harm is now booked only in the zones that player's fire has spread into. Other fires are blamed
-  on nobody.
+  earned once, when its condition starts. Winterborn's clock now starts again at zero each winter,
+  so it is earned once per winter, after that winter's full stretch online; before, a server up
+  through two winters awarded it the moment the second began. Titles earned at the same moment
+  give one announcement.
+- **Arson blame stays with the arsonist's own fire.** FireFront used to report a single igniter for
+  the whole map, so while one player's fire burned, every other fire anywhere was booked as their
+  harm.
+  - With a FireFront that reports who lit each fire (versions after 1.0.1), each fire's harm goes
+    to the player who lit it, or the fire it spread from. Natural fires and lightning blame nobody,
+    and a storm no longer holds its lightning back while someone's fire burns.
+  - With FireFront 1.0.1 or older, harm is booked only in the zones next to where that player's
+    fire has spread. A fire elsewhere on the map is no longer blamed on them. A fire started right
+    next to theirs, while theirs still burns, can still be.
 - **Autosaves stay quick on old worlds.** Saving the zone file compared every visited zone against
   every stored one, a pause on the server that grew with the world's age. It is now a direct lookup.
 - **Nearby messages are rate-limited per player.** One shared limit meant a message to one player
@@ -36,7 +45,9 @@ config keys and no save formats change.
   story or the line a player gets on first reaching barren or festering ground.
 - **Relic and zone messages are checked.** The server drops relic and zone messages from a client
   that claims to be someone else. Clients accept relic and zone updates only from the server. A
-  broken relic stone only blames the player who broke it when that player is near the stone.
+  report that a relic stone broke counts only from a player near it, a report that one was raised
+  only from the player the server asked to raise it, and the breaker is blamed only when they are
+  near the stone.
 
 ## 0.27.5
 
