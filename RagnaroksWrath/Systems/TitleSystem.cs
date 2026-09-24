@@ -50,6 +50,7 @@ namespace RavenIron.RagnaroksWrath.Systems
         private readonly HashSet<long> _stormHeld = new HashSet<long>();
         private readonly HashSet<long> _plagueHeld = new HashSet<long>();
         private readonly HashSet<long> _winterbornHeld = new HashSet<long>();   // re-arms when winter ends
+        private bool _sawWinter;   // this process has seen the current winter, so its end is real
         private readonly HashSet<long> _ashbringerHeld = new HashSet<long>();
 
         // Phase C's standing titles, edge-triggered for the same anti-flap reason.
@@ -89,7 +90,17 @@ namespace RavenIron.RagnaroksWrath.Systems
             if (characters == null) return;
 
             bool winter = SeasonSystem.Current == Season.Winter;
-            if (!winter) _winterSeconds.Clear();   // each winter's clock starts from zero, online or not
+            if (!winter)
+            {
+                _winterSeconds.Clear();          // each winter's clock starts from zero, online or not
+
+                // Everyone may earn Winterborn again next winter. Only on a winter we SAW end:
+                // right after a boot the season can read as the Spring default for a tick
+                // before it resolves, and clearing then would undo the persisted marks.
+                if (_sawWinter) TitleStore.ClearWinterborn();
+                _sawWinter = false;
+            }
+            else _sawWinter = true;
             float plagueThreshold = ModConfig.PlagueSpreadThreshold.Value;
 
             _seenThisTick.Clear();
@@ -127,9 +138,15 @@ namespace RavenIron.RagnaroksWrath.Systems
 
                 float winterSeconds = TitleEdge.WinterSeconds(_winterSeconds, playerId, winter, deltaSeconds);
                 // Once per winter: re-arms when the season turns, and the clock restarts with it.
+                // The persisted mark makes it once per winter across restarts too: the clock and
+                // held set are in memory, so without it a restart mid-winter could award it again.
                 if (TitleEdge.Rises(_winterbornHeld, playerId,
-                        winter && winterSeconds >= ModConfig.WinterbornSeconds.Value))
+                        winter && winterSeconds >= ModConfig.WinterbornSeconds.Value)
+                    && !TitleStore.WinterbornThisWinter(playerId))
+                {
+                    TitleStore.MarkWinterborn(playerId);
                     earned = Winterborn;
+                }
 
                 // Task 13 phase B: the land's grudge made visible to everyone. Harm is
                 // all fire today, so the name is true; more harm writers may earn more

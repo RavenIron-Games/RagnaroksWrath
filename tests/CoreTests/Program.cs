@@ -2390,6 +2390,34 @@ namespace RagnaroksWrath.Tests
                 TitleStore.Load();
                 Check("TitleStore reloads its own file after an unload", TitleStore.Get(42L) == "Stormrider");
 
+                // Winterborn's mark survives a restart (fix review 2, 2026-09-24), in a column an
+                // older build ignores.
+                TitleStore.Set(42L, "Winterborn");
+                TitleStore.MarkWinterborn(42L);
+                TitleStore.Set(42L, "Stormrider");          // a later title replaces it
+                TitleStore.Unload();                        // restart mid-winter
+                TitleStore.Load();
+                Check("the Winterborn mark survives a restart after the title changed",
+                    TitleStore.WinterbornThisWinter(42L) && TitleStore.Get(42L) == "Stormrider");
+                string row = null;
+                foreach (string l in File.ReadAllLines(TitleStore.OverridePath))
+                    if (l.StartsWith("42\t", StringComparison.Ordinal)) row = l;
+                string[] cols = row?.Split('\t');
+                Check($"the mark is a third column, so columns 1-2 read as before (row '{row}')",
+                    cols != null && cols.Length == 3 && cols[1] == "Stormrider" && cols[2] == "W");
+
+                File.WriteAllText(TitleStore.OverridePath, "version\t1\n7\tPlaguewalker\n");   // pre-mark file
+                TitleStore.Load();
+                Check("a file from before the mark loads with no marks",
+                    TitleStore.Get(7L) == "Plaguewalker" && !TitleStore.WinterbornThisWinter(7L)
+                    && !TitleStore.WinterbornThisWinter(42L));
+
+                TitleStore.Set(7L, "Winterborn");
+                TitleStore.MarkWinterborn(7L);
+                TitleStore.ClearWinterborn();               // winter ended
+                TitleStore.Load();
+                Check("clearing at winter's end is saved", !TitleStore.WinterbornThisWinter(7L));
+
                 HealthStore.OverridePath = Path.Combine(ldir, "health.dat");
                 HealthStore.Load();
                 HealthStore.Set(42L, 0.5f);

@@ -26,6 +26,12 @@ namespace RavenIron.RagnaroksWrath.Core
 
         private static readonly Dictionary<long, string> _titles = new Dictionary<long, string>(16);
 
+        // Players who earned Winterborn in the CURRENT winter (2026-09-24). Persisted so a restart
+        // mid-winter cannot award it a second time that winter; cleared when winter ends. Stored
+        // as an optional third column, "W", on the player's title row: a build that predates it
+        // reads columns 1 and 2 exactly as before and ignores the rest.
+        private static readonly HashSet<long> _winterborn = new HashSet<long>();
+
         private static bool _loaded;
 
         /// <summary>Test seam, like Persistence's: when set, used instead of the world path.</summary>
@@ -51,6 +57,25 @@ namespace RavenIron.RagnaroksWrath.Core
             Save();
         }
 
+        /// <summary>True when this player already earned Winterborn this winter.</summary>
+        public static bool WinterbornThisWinter(long playerId) => _winterborn.Contains(playerId);
+
+        /// <summary>Record Winterborn for this winter. Saves, like Set.</summary>
+        public static void MarkWinterborn(long playerId)
+        {
+            if (playerId == 0 || !_winterborn.Add(playerId)) return;
+            Save();
+        }
+
+        /// <summary>Winter is over: everyone may earn Winterborn again next winter. Writes only
+        /// when something was marked, so calling it every tick outside winter costs nothing.</summary>
+        public static void ClearWinterborn()
+        {
+            if (_winterborn.Count == 0) return;
+            _winterborn.Clear();
+            Save();
+        }
+
         /// <summary>
         /// The world is closing: forget it. Clears everything in memory and drops the loaded flag,
         /// so the next world reads its OWN file instead of inheriting this one, and a pure client
@@ -59,12 +84,14 @@ namespace RavenIron.RagnaroksWrath.Core
         public static void Unload()
         {
             _titles.Clear();
+            _winterborn.Clear();
             _loaded = false;
         }
 
         public static void Load()
         {
             _titles.Clear();
+            _winterborn.Clear();
             _loaded = false;
 
             string path = ResolvePath();
@@ -90,6 +117,7 @@ namespace RavenIron.RagnaroksWrath.Core
                         && !string.IsNullOrWhiteSpace(p[1]))
                     {
                         _titles[id] = p[1].Trim();
+                        if (p.Length >= 3 && p[2].Trim() == "W") _winterborn.Add(id);
                         good++;
                     }
                     else bad++;
@@ -106,6 +134,7 @@ namespace RavenIron.RagnaroksWrath.Core
                         "line(s) failed to parse. Titles reset; file kept for inspection.");
                     TryQuarantine(path);
                     _titles.Clear();
+                    _winterborn.Clear();
                     return;
                 }
 
@@ -119,6 +148,7 @@ namespace RavenIron.RagnaroksWrath.Core
                     "Titles reset; file kept for inspection.");
                 TryQuarantine(path);
                 _titles.Clear();
+                _winterborn.Clear();
                 _loaded = true;
             }
         }
@@ -135,10 +165,16 @@ namespace RavenIron.RagnaroksWrath.Core
             {
                 var sb = new StringBuilder(_titles.Count * 32 + 64);
                 sb.Append("version\t").Append(FormatVersion).Append('\n');
-                sb.Append("# playerID\ttitle\n");
+                sb.Append("# playerID\ttitle\t[W = earned Winterborn this winter]\n");
                 foreach (KeyValuePair<long, string> kv in _titles)
+                {
                     sb.Append(kv.Key.ToString(CultureInfo.InvariantCulture)).Append('\t')
-                      .Append(kv.Value).Append('\n');
+                      .Append(kv.Value);
+                    // Rides on the title row. Awarding Winterborn always writes a row, so the
+                    // mark only goes unsaved if an admin clears the player's title.
+                    if (_winterborn.Contains(kv.Key)) sb.Append("\tW");
+                    sb.Append('\n');
+                }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
                 File.WriteAllText(tmp, sb.ToString(), Utf8NoBom);
