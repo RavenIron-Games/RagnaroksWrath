@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+**Leaving one world and starting another in the same game session no longer carries the first
+world's state into the second.** The rest of this entry comes from a code review of 0.27.5. No
+config keys and no save formats change.
+
+- **Each world keeps its own state.** Going back to the main menu and then starting or hosting
+  another world kept the first world's zone drift, titles, grudges, sickness and relic stones in
+  memory. They carried on in the second world at the same map positions, and the next autosave
+  wrote them over the second world's own files. Now a world's state is saved and cleared when you
+  leave it, and the next world loads its own. A dedicated server runs one world per start and was
+  never affected.
+- **Joining a server after playing a local world reads the server's state.** The same leftover
+  data made a player who went on to join a server see their local world's plague, frost, grudges
+  and relic auras instead of the server's. The same fix covers it.
+- **A storm no longer ends another event.** Valheim runs one event at a time, and starting a storm
+  ended whatever was running: a raid on a base, or Valkyrie's Cargo's merchant visit. A storm that
+  comes due during another event now waits, and starts once that event is over. If the storm event
+  is missing from the game's list, the storm no longer starts at all (the log says why), where
+  before it ended the running event and announced a storm that never came.
+- **Titles no longer swap back and forth.** Stormrider, Plaguewalker and Winterborn were awarded
+  again on every title check while their condition held. Two that held together (plague in winter,
+  a storm over plague) swapped every check, each swap announced to everyone. Every title is now
+  earned once, when its condition starts; Winterborn once per winter. Titles earned at the same
+  moment give one announcement.
+- **Arson blame stays with the arsonist's own fire.** FireFront reports a single igniter for the
+  whole map, so while one player's fire burned, every other fire anywhere was booked as their harm.
+  Harm is now booked only in the zones that player's fire has spread into. Other fires are blamed
+  on nobody.
+- **Autosaves stay quick on old worlds.** Saving the zone file compared every visited zone against
+  every stored one, a pause on the server that grew with the world's age. It is now a direct lookup.
+- **Nearby messages are rate-limited per player.** One shared limit meant a message to one player
+  could silently swallow another player's one-time message elsewhere on the map, such as a relic's
+  story or the line a player gets on first reaching barren or festering ground.
+- **Relic and zone messages are checked.** The server drops relic and zone messages from a client
+  that claims to be someone else. Clients accept relic and zone updates only from the server. A
+  broken relic stone only blames the player who broke it when that player is near the stone.
+
 ## 0.27.5
 
 **A storm now blows over whether or not anyone is near it.** Every storm was registered as a vanilla
