@@ -39,6 +39,11 @@ namespace RavenIron.RagnaroksWrath.Net
 
         private static ZRoutedRpc _registeredOn;
 
+        // Server side: which peers were asked to raise a stone in which zone, this session.
+        // Only one of them may confirm it; any other "placed" report is ignored.
+        private static readonly HashSet<KeyValuePair<ZoneKey, long>> _asked =
+            new HashSet<KeyValuePair<ZoneKey, long>>();
+
         /// <summary>Standing relic at a zone, same authority rule as ZoneSync.StateAt: the
         /// authority asks the ledger, a pure client reads the synced cache.</summary>
         public static RelicLedger.Relic RelicAt(ZoneKey zone)
@@ -71,6 +76,7 @@ namespace RavenIron.RagnaroksWrath.Net
                 _registeredOn = rpc;
                 _cache.Clear();   // new world session, new truth; the server re-broadcasts
                 _placedThisSession.Clear();
+                _asked.Clear();
             }
             catch (Exception ex)
             {
@@ -113,6 +119,7 @@ namespace RavenIron.RagnaroksWrath.Net
             if (rpc == null || peerUid == 0) return;
             try
             {
+                _asked.Add(new KeyValuePair<ZoneKey, long>(zone, peerUid));
                 rpc.InvokeRoutedRPC(peerUid, PlaceRpc, zone.X, zone.Y, relic.Type, relic.Cursed);
             }
             catch (Exception ex)
@@ -234,7 +241,47 @@ namespace RavenIron.RagnaroksWrath.Net
             // Only the authority acts; a client receiving a stray report ignores it.
             if (!RelicLedger.IsLoaded) return;
             var zone = new ZoneKey(zx, zy);
+
+            // The report comes from the stone's owner, which is a peer with a player near it.
+            // A client far away cannot lift a relic it could not have seen fall. The sender id
+            // is real here: SenderGuard's server prefix drops forged ones.
+            if (!ReporterNear(zone, sender))
+            {
+                RagnaroksWrath.Log.LogInfo(
+                    $"RelicSync: ignored a broken-relic report for {zone} from peer {sender}, " +
+                    "which has no player near it.");
+                return;
+            }
+
             Systems.World.RelicSystem.OnRelicBroken(zone, PlausibleVandal(zone, vandalPlayerId));
+        }
+
+        /// <summary>True when <paramref name="sender"/> is this machine (the authority's own
+        /// report) or owns a player character within three zones of <paramref name="zone"/>.
+        /// Three, not two: the stone's owner is whoever has its area loaded, a little wider than
+        /// where the player stands.</summary>
+        private static bool ReporterNear(ZoneKey zone, long sender)
+        {
+            if (sender == ZNet.GetUID()) return true;
+            try
+            {
+                ZNet znet = ZNet.instance;   // Unity null: never ?. on a UnityEngine.Object
+                List<ZDO> characters = znet != null ? znet.GetAllCharacterZDOS() : null;
+                if (characters == null) return false;
+                for (int i = 0; i < characters.Count; i++)
+                {
+                    ZDO zdo = characters[i];
+                    if (zdo == null || !zdo.IsValid() || zdo.GetOwner() != sender) continue;
+                    if (zdo.GetLong(ZDOVars.s_playerID, 0L) == 0) continue;
+                    ZoneKey at = ZoneKey.FromWorldPos(zdo.GetPosition());
+                    if (Math.Abs(at.X - zone.X) <= 3 && Math.Abs(at.Y - zone.Y) <= 3) return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                RagnaroksWrath.Log.LogWarning($"RelicSync: reporter check failed: {ex.Message}");
+            }
+            return false;
         }
 
         /// <summary>
@@ -288,7 +335,16 @@ namespace RavenIron.RagnaroksWrath.Net
         private static void RPC_RelicPlaced(long sender, int zx, int zy)
         {
             if (!RelicLedger.IsLoaded) return;   // authority only
-            RelicLedger.MarkPlaced(new ZoneKey(zx, zy));
+            var zone = new ZoneKey(zx, zy);
+
+            // Only a peer this server asked to raise that stone may say it stands.
+            if (!_asked.Contains(new KeyValuePair<ZoneKey, long>(zone, sender)))
+            {
+                RagnaroksWrath.Log.LogInfo(
+                    $"RelicSync: ignored a 'placed' report for {zone} from peer {sender}, which was not asked.");
+                return;
+            }
+            RelicLedger.MarkPlaced(zone);
         }
     }
 }
