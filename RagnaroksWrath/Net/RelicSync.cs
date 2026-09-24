@@ -257,16 +257,27 @@ namespace RavenIron.RagnaroksWrath.Net
         }
 
         /// <summary>True when <paramref name="sender"/> is this machine (the authority's own
-        /// report) or owns a player character within three zones of <paramref name="zone"/>.
-        /// Three, not two: the stone's owner is whoever has its area loaded, a little wider than
-        /// where the player stands.</summary>
+        /// report), or when the sending peer's reference position or a player character it owns
+        /// is within three zones of <paramref name="zone"/>. Three, not two: the stone's owner is
+        /// whoever has its area loaded, a little wider than where the player stands. The peer's
+        /// m_refPos counts because a player who just died has no character ZDO, and a stone that
+        /// fell while its owner lay dead must still lift, or its aura stays on bare ground.</summary>
         private static bool ReporterNear(ZoneKey zone, long sender)
         {
             if (sender == ZNet.GetUID()) return true;
             try
             {
                 ZNet znet = ZNet.instance;   // Unity null: never ?. on a UnityEngine.Object
-                List<ZDO> characters = znet != null ? znet.GetAllCharacterZDOS() : null;
+                if (znet == null) return false;
+
+                ZNetPeer peer = znet.GetPeer(sender);
+                if (peer != null)
+                {
+                    ZoneKey refZone = ZoneKey.FromWorldPos(peer.m_refPos);
+                    if (Math.Abs(refZone.X - zone.X) <= 3 && Math.Abs(refZone.Y - zone.Y) <= 3) return true;
+                }
+
+                List<ZDO> characters = znet.GetAllCharacterZDOS();
                 if (characters == null) return false;
                 for (int i = 0; i < characters.Count; i++)
                 {
