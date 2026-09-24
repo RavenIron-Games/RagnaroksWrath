@@ -1342,6 +1342,29 @@ namespace RagnaroksWrath.Tests
         {
             Console.WriteLine("\nTitles");
 
+            // Rising edges: two conditions that hold together for many ticks award once, not
+            // every tick (review 2026-09-24: Plaguewalker and Winterborn swapped every 10 s).
+            {
+                var plagueHeld = new HashSet<long>();
+                var winterHeld = new HashSet<long>();
+                int awards = 0;
+                string last = null;
+                for (int tick = 0; tick < 6; tick++)
+                {
+                    string earned = null;
+                    if (TitleEdge.Rises(plagueHeld, 7L, true)) earned = "Plaguewalker";
+                    if (TitleEdge.Rises(winterHeld, 7L, true)) earned = "Winterborn";
+                    if (earned != null) { awards++; last = earned; }
+                }
+                Check($"two titles held together award once, latest wins (awards {awards}, '{last}')",
+                    awards == 1 && last == "Winterborn");
+
+                Check("a condition that drops re-arms its title",
+                    !TitleEdge.Rises(plagueHeld, 7L, false) && TitleEdge.Rises(plagueHeld, 7L, true));
+                Check("edges are per player",
+                    TitleEdge.Rises(plagueHeld, 8L, true) && !TitleEdge.Rises(plagueHeld, 7L, true));
+            }
+
             string dir = Path.Combine(Path.GetTempPath(), "rw_titles_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(dir);
             string path = Path.Combine(dir, "titles.dat");

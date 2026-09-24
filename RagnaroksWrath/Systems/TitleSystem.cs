@@ -42,12 +42,14 @@ namespace RavenIron.RagnaroksWrath.Systems
         private readonly HashSet<long> _knownOnline = new HashSet<long>();
         private readonly HashSet<long> _seenThisTick = new HashSet<long>();
 
-        // Ashbringer awards on the RISING EDGE of its condition only. The zonal titles
-        // re-award every tick their condition holds, which is fine while conditions are
-        // mutually exclusive in practice — but a grudge PERSISTS across zones, so a grudged
-        // player standing in the outbreak would otherwise alternate Ashbringer and
-        // Plaguewalker every tick, announcing each swap. Edge-triggered, the grudge title
-        // lands once and then cedes to whatever the player walks into next.
+        // EVERY title awards on the RISING EDGE of its condition only (TitleEdge). The zonal
+        // titles used to re-award every tick their condition held, so any two that held
+        // together (a storm over plague, plague in winter, a grudge in the outbreak) swapped
+        // back and forth every tick, each swap announced to everyone and saved to disk.
+        // Edge-triggered, a title lands once and then cedes to whatever comes next.
+        private readonly HashSet<long> _stormHeld = new HashSet<long>();
+        private readonly HashSet<long> _plagueHeld = new HashSet<long>();
+        private readonly HashSet<long> _winterbornHeld = new HashSet<long>();   // re-arms when winter ends
         private readonly HashSet<long> _ashbringerHeld = new HashSet<long>();
 
         // Phase C's standing titles, edge-triggered for the same anti-flap reason.
@@ -111,48 +113,53 @@ namespace RavenIron.RagnaroksWrath.Systems
                     foreach (KeyValuePair<long, string> kv in TitleStore.All())
                         TitleSync.Broadcast(kv.Key, kv.Value);
 
-                if (WeatherSystem.IsStormAt(pos))
-                    Award(playerId, zdo, Stormrider);
+                // At most ONE award per player per tick: titles earned together resolve to the
+                // last in this order (latest earned wins), announced once, saved once.
+                string earned = null;
 
-                if (Persistence.Get(ZoneKey.FromWorldPos(pos)).Plague >= plagueThreshold)
-                    Award(playerId, zdo, Plaguewalker);
+                if (TitleEdge.Rises(_stormHeld, playerId, WeatherSystem.IsStormAt(pos)))
+                    earned = Stormrider;
 
+                if (TitleEdge.Rises(_plagueHeld, playerId,
+                        Persistence.Get(ZoneKey.FromWorldPos(pos)).Plague >= plagueThreshold))
+                    earned = Plaguewalker;
+
+                float winterSeconds = 0f;
                 if (winter)
                 {
-                    _winterSeconds.TryGetValue(playerId, out float s);
-                    s += deltaSeconds;
-                    _winterSeconds[playerId] = s;
-                    if (s >= ModConfig.WinterbornSeconds.Value)
-                        Award(playerId, zdo, Winterborn);
+                    _winterSeconds.TryGetValue(playerId, out winterSeconds);
+                    winterSeconds += deltaSeconds;
+                    _winterSeconds[playerId] = winterSeconds;
                 }
+                // Once per winter: re-arms when the season turns.
+                if (TitleEdge.Rises(_winterbornHeld, playerId,
+                        winter && winterSeconds >= ModConfig.WinterbornSeconds.Value))
+                    earned = Winterborn;
 
                 // Task 13 phase B: the land's grudge made visible to everyone. Harm is
                 // all fire today, so the name is true; more harm writers may earn more
-                // names later. Edge-triggered — see _ashbringerHeld.
+                // names later.
                 if (ModConfig.EnableRivalry.Value && RivalryLedger.IsLoaded)
                 {
-                    bool grudged = RivalryLedger.MaxGrudgeFor(playerId, ModConfig.GrudgeScale.Value)
-                                   >= ModConfig.AshbringerGrudge.Value;
-                    if (grudged && _ashbringerHeld.Add(playerId))
-                        Award(playerId, zdo, Ashbringer);
-                    else if (!grudged)
-                        _ashbringerHeld.Remove(playerId);   // re-arm once the land forgives
+                    // Re-arms once the land forgives.
+                    if (TitleEdge.Rises(_ashbringerHeld, playerId,
+                            RivalryLedger.MaxGrudgeFor(playerId, ModConfig.GrudgeScale.Value)
+                            >= ModConfig.AshbringerGrudge.Value))
+                        earned = Ashbringer;
 
                     // Phase C standing: holding enough zones' memory earns the name.
-                    EdgeTitle(playerId, zdo, _wardenHeld, Warden,
-                        World.RivalrySystem.CareZonesHeld(playerId) >= ModConfig.WardenZonesHeld.Value);
-                    EdgeTitle(playerId, zdo, _despoilerHeld, Despoiler,
-                        World.RivalrySystem.HarmZonesHeld(playerId) >= ModConfig.DespoilerZonesHeld.Value);
+                    if (TitleEdge.Rises(_wardenHeld, playerId,
+                            World.RivalrySystem.CareZonesHeld(playerId) >= ModConfig.WardenZonesHeld.Value))
+                        earned = Warden;
+                    if (TitleEdge.Rises(_despoilerHeld, playerId,
+                            World.RivalrySystem.HarmZonesHeld(playerId) >= ModConfig.DespoilerZonesHeld.Value))
+                        earned = Despoiler;
                 }
+
+                if (earned != null) Award(playerId, zdo, earned);
             }
 
             _knownOnline.RemoveWhere(id => !_seenThisTick.Contains(id));
-        }
-
-        private void EdgeTitle(long playerId, ZDO zdo, HashSet<long> held, string title, bool condition)
-        {
-            if (condition && held.Add(playerId)) Award(playerId, zdo, title);
-            else if (!condition) held.Remove(playerId);
         }
 
         private void Award(long playerId, ZDO zdo, string title)
