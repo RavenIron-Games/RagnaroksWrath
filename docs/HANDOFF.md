@@ -1,3 +1,88 @@
+# Session handoff — 2026-09-24 (0.28.0: two config files, lightning checks the rain, PR #9 folded in)
+
+Read `CLAUDE.md` first, then this. The 2026-09-23 handoff below is superseded; its OPEN BUG section
+is fixed in 0.28.0 and verified in-game.
+
+## The one-line version
+
+**0.28.0** is three pieces of work in one release: the rain fix (storm lightning asks FireFront
+whether it rains where each bolt would land), the config layout (one 148-setting file becomes a
+42-setting main file and a 104-setting advanced file, every value carried), and PR #9 (a separate
+session's code review of 0.27.5, branch `fix/review-2026-09-24`). The combined build was tested in
+one in-game session on Storm10 with FireFront 1.0.2, and both the migration and the merge had
+adversarial reviews.
+
+## Where things stand
+
+- **Local branch `release/0.28.0`** = `fix/review-2026-09-24` (PR #9, open, unmerged) plus the 0.28.0
+  work, UNCOMMITTED at the time of writing. `stash@{0}` ("0.28.0 work before integrating PR 9") holds
+  the 0.28.0 work as first written on `release/0.27.6`; drop it once 0.28.0 is merged. `release/0.27.6`
+  never shipped: its number was folded into 0.28.0, and nothing public says 0.27.6.
+- **PR #8** (`docs/0.27.5-audit`, CHANGELOG + CLAUDE.md) is still open and NOT in `release/0.28.0`. Merging
+  it and this one will conflict in those two files; take both sides.
+- **The store**: Hexium serves RW **0.27.4** (the fixed 0.27.5 zip in `dist\` was never uploaded, and
+  0.28.0 supersedes it) and FireFront **1.0.1**. 0.28.0 pins **FireFront 1.0.2**, which is not on the
+  store yet: **upload FireFront 1.0.2 first**, confirm
+  `valheim.hexium.gg/api/experimental/package/RavenIronStudios/FireFront/1.0.2/` answers 200, then RW.
+  BepInExPack 5.4.2351 appeared on 2026-09-24; the manifest still says 5.4.2350, which Hexium resolves
+  to the current one anyway.
+- **Verified in-game, 2026-09-24, Storm10, Valheim 1.0.15, FireFront 1.0.2** (details in CLAUDE.md's
+  Current state): 3 of 3 bolts withheld under `fireweather force Rain`, a strike and 5 ground fires
+  under `force Clear`, five strikes under a natural clear sky after `reset`. The migration: 146 of 146 values
+  on Storm10, on a copy of it (Storm28), and in the player's own client config; second boot a no-op;
+  an interrupted migration rebuilt by hand behaved as designed.
+- **The docs check corrected the docs, and one constant.** `IsRainingAt` arrived in FireFront **0.21.0**, not
+  0.20.3 (`RainFireFrontVersion`, the boot warning and every doc); 45 settings, not 25, are read on each
+  player's own game (every Consequence setting among them); wind feeds nothing at all now; `.v0.bak`
+  means "before 0.27.2". These landed after PR #10 merged, in the docs PR.
+- **Tests: 477/477** (0.28.0's 440 plus PR #9's). apiprobe: **110 of 110** surfaces resolve against the
+  1.0.15 server assemblies.
+- **Storm10**: stopped, left on the 0.28.0 build with FireFront 1.0.2 and its PRODUCTION storm settings,
+  now in the two-file layout (compared by name against the pre-test file: 146 of 146). Beside them:
+  `RagnaroksWrath.dll.0.27.5.bak` (a 0.27.5 build from `0bfcf8c`, not the packaged one), `RagnaroksWrath.dll.0.27.5-live-20260924.bak` (the
+  PR #9 test build the other session had there), `com.raveniron.ragnarokswrath.cfg.pre-028test-20260924`
+  (the v1 production file), `.v1.bak` (written by the migration), `.v2-raintest-20260924` (the test
+  settings, v2 layout).
+- **The `testing` Gale profile** runs the same 0.28.0 build (DLL + repo manifest), its config migrated;
+  the PR #9 test build and its v1 config are kept beside them as `.0.27.5-live-20260924.bak` and
+  `.pre-028test-20260924`.
+- **Storm28** (`C:\Users\donfr\ValheimServers\Storm28`, port 2479, 2.1 GB) is a disposable Storm10 copy
+  made so this session would not collide with the FireFront session. Stopped. Delete it when convenient.
+
+## What was learned, in the order it cost something
+
+1. **Another session had a release in flight, and nothing on this branch showed it.** It surfaced only
+   because Storm10's RW DLL named a commit (`0.27.5+ddd36d7`) this branch did not have. `git worktree list`
+   then found `_wt\RagnaroksWrath-release` on `fix/review-2026-09-24` with thirteen commits, a changelog
+   and a FireFront 1.0.2 pin. **Before building a release, list every branch by date and every worktree.**
+   The integration was a stash, a branch from their tip, and a pop: one conflict (the manifest's pin),
+   six clean text merges, and a five-reviewer semantic check that found no damage.
+2. **A stop routine that breaks every `valheim_server.exe` takes down another session's server.** Storm28
+   was stopped twice, cleanly, by something other than this session. Stop a server by its own
+   `ExecutablePath`, never by process name.
+3. **The migration's failure paths needed a second review.** The first 0.28.0 tests modelled only a
+   locked file failing before any write. The review found five defects, all on failure paths: a
+   destination already holding an edited value was overwritten, a failed save truncated the file, a
+   failed advanced save still saved the main file, an unreadable file ran the boot on defaults and
+   saved them, and the backup note could deny a backup existed. Each is now a CLAUDE.md trap and a test
+   that fails when its fix is reverted.
+4. **`fireweather force <Env>` is the instrument for weather on a dedicated server.** FireFront's own admin
+   command sets the server's `m_debugEnv`, which vanilla's override path honours even headless (the
+   server's own sky read 'Rain'), and which `IsRainingAt` replays. Relayed from any admin client.
+5. **`tools/config-guide/check-migrated.js` proves a migration by name.** It compares an old file with the
+   two new ones key by key. It is how every "146 of 146" above was measured, and how Storm10's
+   restored settings were checked.
+
+## Not done
+
+- **Commit, push, PR, package** — waiting on the word. Package from a FRESH CLONE of the pushed commit
+  (two clones must give the same md5), then audit the zip.
+- **The website** (RavenIron-website): the RW page stopped promising "never in rain" on 2026-09-23. Once
+  0.28.0 is live it can say it again, with the FireFront 0.21.0 caveat, and it should mention the two
+  config files.
+- **The `SeasonSystem: initial season resolved as Spring` boot line is premature** on an established world;
+  the next tick corrects it (`Spring -> Winter`). Seen on 0.27.x too. Cosmetic.
+
 # Session handoff — 2026-09-23 (0.27.3 and 0.27.4: bosses stop levelling, and the FireFront pin moves)
 
 Read `CLAUDE.md` first, then this. The 2026-09-18 handoff below is SUPERSEDED but kept, and two
