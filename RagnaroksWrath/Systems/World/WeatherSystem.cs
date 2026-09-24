@@ -98,6 +98,15 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         private readonly List<ZDO> _wildCandidates = new List<ZDO>(8);
         private bool _holdLogged;
 
+        // Latches for the two other reasons a due storm waits: another event holds vanilla's
+        // single event slot, or our storm event is missing from the list. Logged once each.
+        private bool _eventHoldLogged;
+        private bool _missingEventLogged;
+
+        /// <summary>Valkyrie's Cargo's merchant visit (its CargoEvent.Name). Named only so the
+        /// hold line can say what it waited for; the hold applies to every event that is not ours.</summary>
+        private const string ValkyriesCargoEventName = "valkyries_cargo";
+
         /// <summary>
         /// RandEventSystem.m_randomEvent is PRIVATE, so liveness comes through a cached field
         /// accessor per rule 5 — publicized assemblies are compile-time only and Mono refuses the
@@ -171,6 +180,25 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             float span = Math.Max(1f, ModConfig.StormMaxIntervalSeconds.Value - ModConfig.StormMinIntervalSeconds.Value);
             float progress = (_sinceStormEnded - ModConfig.StormMinIntervalSeconds.Value) / span;
             if (_rng.NextDouble() > progress) return;
+
+            // Vanilla has ONE event slot, and SetRandomEvent ends whatever is in it (decompiled
+            // 1.0.15: SetActiveEvent(null, end: true), then OnStop). So a storm started now would
+            // cut short a raid at someone's base, or Valkyrie's Cargo's merchant mid-trade. The
+            // storm waits with its accrual intact and breaks once the slot is free.
+            string other = ForeignEventName();
+            if (other != null)
+            {
+                if (!_eventHoldLogged)
+                {
+                    _eventHoldLogged = true;
+                    RagnaroksWrath.Log.LogInfo(
+                        $"[{Name}] storm holds - another event is running ('{other}'" +
+                        (other == ValkyriesCargoEventName ? ", Valkyrie's Cargo's merchant visit" : "") +
+                        "); it breaks when that event ends.");
+                }
+                return;
+            }
+            _eventHoldLogged = false;
 
             // The roll succeeded — the storm WANTS to fire. Only now pay for the wild
             // filter (0.26.0): a storm anchored on a player at their homestead announces
@@ -368,6 +396,21 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             string eventName = StormLook.Roll(_rng.NextDouble(), ModConfig.StormDryChance.Value);
             bool dry = StormLook.IsDry(eventName);
 
+            // GetEvent returns null for a name the list lacks, and SetRandomEvent(null) would end
+            // whatever runs, start nothing, and still let us announce a storm. Refuse instead.
+            if (!system.HaveEvent(eventName))
+            {
+                if (!_missingEventLogged)
+                {
+                    _missingEventLogged = true;
+                    RagnaroksWrath.Log.LogError(
+                        $"[WeatherSystem] storm event '{eventName}' is not in RandEventSystem's list " +
+                        "(registration failed, or another mod rebuilt the list) - no storm will start.");
+                }
+                return;
+            }
+            _missingEventLogged = false;
+
             try
             {
                 system.SetRandomEventByName(eventName, centre);
@@ -404,6 +447,27 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             bool wasActive = StormActive;
             RefreshStormState();
             if (StormActive != wasActive) ReportTransition();
+        }
+
+        /// <summary>
+        /// The name of a running event that is not one of our storms, or null when the slot is
+        /// free (or holds our own storm). GetCurrentRandomEvent is public in 1.0.15.
+        /// </summary>
+        private static string ForeignEventName()
+        {
+            try
+            {
+                RandEventSystem system = RandEventSystem.instance;
+                if (system == null) return null;   // Unity null: never use ?. on a UnityEngine.Object
+                RandomEvent current = system.GetCurrentRandomEvent();
+                if (current == null || IsStormEvent(current.m_name)) return null;
+                return current.m_name ?? "";
+            }
+            catch (Exception ex)
+            {
+                RagnaroksWrath.Log.LogWarning($"[WeatherSystem] could not read the current event: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>
