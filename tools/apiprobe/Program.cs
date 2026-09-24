@@ -72,6 +72,16 @@ class Probe
         F("ZNetScene", "s_instance", AnyStatic);
         F("ZNetScene", "m_namedPrefabs", AnyInstance);
         F("EnvMan", "s_instance", AnyStatic);
+        // The weather replay behind FireFront's ValheimBridge.IsRainingAt (0.20.3+), which
+        // Ragnarok's Wrath's storm lightning also asks since 0.28.0. If one of these moves,
+        // FireFront reads every sky as dry: its own rain suppression stops, and bolts fall in
+        // rain again.
+        M("EnvMan", "GetAvailableEnvironments", AnyInstance, "BiomeSector");
+        M("EnvMan", "SelectWeightedEnvironment", AnyInstance, "List<EnvEntry>");
+        M("EnvMan", "GetEnv", AnyInstance, "System.String");
+        F("EnvMan", "m_environmentDuration", AnyInstance);
+        F("EnvMan", "m_debugEnv", AnyInstance);
+        F("EnvMan", "m_forceEnv", AnyInstance);
 
         Console.WriteLine();
         Console.WriteLine("=== Ragnarok's Wrath surfaces ===");
@@ -83,6 +93,21 @@ class Probe
         M("ZDOMan", "FindSectorObjects", AnyInstance, "Vector2s", "SimulationDistance", "List<ZDO>", "List<ZDO>");
         M("EnvMan", "GetCurrentDay", AnyInstance);   // rule 5: private, reached by AccessTools
         F("ZDOVars", "s_creator", AnyStatic);
+        // Review fixes, 2026-09-24: the storm's wait for a running event, the sender checks on
+        // relic and zone messages (SenderGuard, RelicSync), and the world-close reset. Most are
+        // direct calls, so this catches a rename or a new signature, NOT a member turning private
+        // (M/F search public and non-public alike; rule 5's trap needs a visibility check).
+        F("ZNetPeer", "m_refPos", AnyInstance);          // RelicSync's reporter-near test
+        M("RandEventSystem", "GetCurrentRandomEvent", AnyInstance);
+        M("RandEventSystem", "HaveEvent", AnyInstance, "System.String");
+        M("ZNet", "GetServerPeer", AnyInstance);
+        M("ZNet", "GetPeer", AnyInstance, "System.Int64");
+        F("ZNetPeer", "m_rpc", AnyInstance);
+        M("ZPackage", "GetPos", AnyInstance);
+        M("ZPackage", "SetPos", AnyInstance, "System.Int32");
+        M("ZPackage", "ReadZDOID", AnyInstance);
+        Any("ZNet", "OnDestroy");                    // Harmony target, private, patched by name
+        Any("ZRoutedRpc", "RPC_RoutedRPC");          // Harmony target, private, patched by name
 
         // The four mods below were outside this probe until 2026-09-11. That gap was the whole
         // reason the 1.0.7 port needed a 32-agent sweep to find what a tool should have found.

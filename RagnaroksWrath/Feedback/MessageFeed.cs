@@ -27,7 +27,13 @@ namespace RavenIron.RagnaroksWrath.Feedback
             Centre = 2
         }
 
-        private static float _lastMessageTime;
+        // Last rate-limited message time PER PLAYER (player id). One process-wide slot meant a
+        // line for one player silenced a one-time line for another player across the map, and
+        // the one-time callers never retry.
+        private static readonly Dictionary<long, float> _lastMessageTime = new Dictionary<long, float>(8);
+
+        /// <summary>World closing (WorldTick.EndWorld): forget the old world's players.</summary>
+        internal static void ResetWorldState() => _lastMessageTime.Clear();
 
         /// <summary>
         /// Tell one player something. No-op on a headless server (no local player to tell) and
@@ -59,7 +65,7 @@ namespace RavenIron.RagnaroksWrath.Feedback
             Player local = Player.m_localPlayer;
             if (local == null) return;
 
-            if (!PassesRateLimit()) return;
+            if (!PassesRateLimit(local.GetPlayerID())) return;
 
             ToPlayer(local, text, where);
         }
@@ -75,13 +81,6 @@ namespace RavenIron.RagnaroksWrath.Feedback
                                          Placement where = Placement.TopLeft)
         {
             if (string.IsNullOrEmpty(text)) return;
-            if (!PassesRateLimit())
-            {
-                // Zone-local lines are rare by policy; one eaten by the limiter deserves
-                // a trace, or a missing announcement is indistinguishable from a broken pipe.
-                RagnaroksWrath.Log.LogInfo($"MessageFeed: rate-limited '{text}'.");
-                return;
-            }
 
             try
             {
@@ -92,7 +91,7 @@ namespace RavenIron.RagnaroksWrath.Feedback
                 // players: LOCAL instances first (listen host, singleplayer), then remote
                 // players by CHARACTER ZDO, each sent vanilla's own "ShowMessage" routed
                 // RPC at its owning peer — the same handler ToEveryone already targets.
-                int recipients = 0;
+                int recipients = 0, limited = 0;
 
                 // Distances are XZ-PLANAR, deliberately: callers pass zone centres, and
                 // ZoneKey.ToWorldPos() sits at y=0 — "not ground level", its own comment
@@ -106,6 +105,7 @@ namespace RavenIron.RagnaroksWrath.Feedback
                     Player p = players[i];
                     if (p == null) continue;
                     if (Utils.DistanceXZ(p.transform.position, pos) >= radius) continue;
+                    if (!PassesRateLimit(p.GetPlayerID())) { limited++; continue; }
                     p.Message((MessageHud.MessageType)where, text);
                     recipients++;
                 }
@@ -122,11 +122,13 @@ namespace RavenIron.RagnaroksWrath.Feedback
                         {
                             ZDO zdo = characters[i];
                             if (zdo == null || !zdo.IsValid()) continue;
-                            if (zdo.GetLong(ZDOVars.s_playerID, 0L) == 0) continue;
+                            long playerId = zdo.GetLong(ZDOVars.s_playerID, 0L);
+                            if (playerId == 0) continue;
 
                             long owner = zdo.GetOwner();
                             if (owner == 0 || owner == selfUid) continue;   // locals already served
                             if (Utils.DistanceXZ(zdo.GetPosition(), pos) >= radius) continue;
+                            if (!PassesRateLimit(playerId)) { limited++; continue; }
 
                             rpc.InvokeRoutedRPC(owner, "ShowMessage", (int)where, text);
                             recipients++;
@@ -134,7 +136,12 @@ namespace RavenIron.RagnaroksWrath.Feedback
                     }
                 }
 
-                if (recipients == 0)
+                // Zone-local lines are rare by policy; one eaten by the limiter deserves a
+                // trace, or a missing announcement is indistinguishable from a broken pipe.
+                if (limited > 0)
+                    RagnaroksWrath.Log.LogInfo(
+                        $"MessageFeed: rate-limited '{text}' for {limited} player(s).");
+                if (recipients == 0 && limited == 0)
                     RagnaroksWrath.Log.LogInfo(
                         $"MessageFeed: ZERO recipients for '{text}' at {pos}.");
             }
@@ -183,18 +190,20 @@ namespace RavenIron.RagnaroksWrath.Feedback
         }
 
         /// <summary>
-        /// Minimum gap between messages, so a cascade of simultaneous world events can't spam a
-        /// player off their own screen. Deliberately not applied to ToEveryone: those are rare by
-        /// policy, and silently dropping a season change would be worse than the noise.
+        /// Minimum gap between messages TO ONE PLAYER, so a cascade of simultaneous world events
+        /// can't spam a player off their own screen. Per player, so one player's line never
+        /// silences another's. Deliberately not applied to ToEveryone: those are rare by policy,
+        /// and silently dropping a season change would be worse than the noise.
         /// </summary>
-        private static bool PassesRateLimit()
+        private static bool PassesRateLimit(long playerId)
         {
             float now = Time.realtimeSinceStartup;
             float gap = Mathf.Clamp(ModConfig.MessageMinIntervalSeconds.Value, 0f, 300f);
 
-            if (now - _lastMessageTime < gap) return false;
+            if (_lastMessageTime.TryGetValue(playerId, out float last) && now - last < gap)
+                return false;
 
-            _lastMessageTime = now;
+            _lastMessageTime[playerId] = now;
             return true;
         }
 

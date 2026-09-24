@@ -34,12 +34,15 @@
     <Compile Include="..\..\RagnaroksWrath\Config\ConfigMigration.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\WindState.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\FireScorch.cs" />
+    <Compile Include="..\..\RagnaroksWrath\Core\ArsonFootprint.cs" />
+    <Compile Include="..\..\RagnaroksWrath\Core\FireBlame.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\PlagueSpread.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\BiomeMetrics.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\WorldCondition.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\EcologyPressure.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\TitleStore.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\TitleFormat.cs" />
+    <Compile Include="..\..\RagnaroksWrath\Core\TitleEdge.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\FogMath.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\ExposureMath.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\HealthStore.cs" />
@@ -57,6 +60,11 @@
     <Compile Include="..\..\RagnaroksWrath\Core\AshMath.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\Persistence.cs" />
     <Compile Include="..\..\RagnaroksWrath\Config\ModConfig.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- A config file the shipped 0.27.5 build really wrote (Storm10, custom values), for the layout migration. -->
+    <None Include="fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

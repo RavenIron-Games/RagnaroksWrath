@@ -48,6 +48,10 @@ namespace RavenIron.RagnaroksWrath.Core
 
         private void Update()
         {
+            // Backstop for Patch_WorldEnd: if a world ran here and ZNet has gone, that world is
+            // over. The patch normally gets there first, while ZNet is still alive.
+            if (_initialised && ZNet.instance == null) EndWorld("ZNet gone");
+
             // Nothing runs until we know what this process is. IsSimulationAuthority is false
             // while ZNet is null, so this also covers the main-menu case.
             if (!RagnaroksWrath.IsSimulationAuthority()) return;
@@ -76,8 +80,10 @@ namespace RavenIron.RagnaroksWrath.Core
 
                 if (!system.Enabled) continue;
 
+                // A system that has never run in this world gets one interval as its first delta,
+                // not the whole time since the game started (menu time, or a previous world).
                 float last = _lastRun[system];
-                float due = now - last;
+                float due = last <= 0f ? system.IntervalSeconds : now - last;
                 if (due < system.IntervalSeconds) continue;
 
                 _lastRun[system] = now;
@@ -144,6 +150,67 @@ namespace RavenIron.RagnaroksWrath.Core
             RagnaroksWrath.Log.LogInfo(
                 $"WorldTick online — {_systems.Count} system(s), budget {ModConfig.TickBudgetMs.Value}ms/frame, " +
                 $"dedicated={RagnaroksWrath.IsDedicated()}");
+        }
+
+        /// <summary>
+        /// The world is closing (logout to the menu, a host shutting down, the server quitting).
+        ///
+        /// WorldTick lives on the plugin's DontDestroyOnLoad object, so its own OnDestroy runs only
+        /// when the whole game quits. Without this, a second world in the same game session kept the
+        /// first world's zones, titles, grudges, sickness and relics in memory, ran them there, and
+        /// wrote them over the second world's files on its first autosave. A player who then joined
+        /// a server as a client kept reading the single-player stores instead of the server's.
+        ///
+        /// Order matters: flush while the old world's path still resolves (ZNet.m_world is static
+        /// and still names it here), then clear every store and latch, then build fresh systems so
+        /// no per-world state survives in an instance field. The next world runs Persistence.Load
+        /// and each system's lazy store load again, exactly as the first world did.
+        /// </summary>
+        internal static void EndWorld(string why)
+        {
+            if (!_initialised) return;
+            _initialised = false;
+
+            try
+            {
+                Persistence.Save(force: true);
+                HealthStore.SaveIfDirty();
+                RivalryLedger.SaveIfDirty();
+                RelicLedger.SaveIfDirty();
+            }
+            catch (Exception ex)
+            {
+                RagnaroksWrath.Log.LogError($"WorldTick: final save on world close failed: {ex}");
+            }
+
+            try
+            {
+                Persistence.Unload();
+                ZoneClock.Clear();
+                TitleStore.Unload();
+                HealthStore.Unload();
+                RivalryLedger.Unload();
+                RelicLedger.Unload();
+
+                Systems.World.WeatherSystem.ResetWorldState();
+                Systems.World.WorldStateSystem.ResetWorldState();
+                Systems.World.RivalrySystem.ResetWorldState();
+                Systems.World.RelicSystem.ResetWorldState();
+                Feedback.MessageFeed.ResetWorldState();
+
+                _systems.Clear();
+                _lastRun.Clear();
+                _cursor = 0;
+                _lastSave = 0f;
+                RagnaroksWrath.RegisterSystems();
+            }
+            catch (Exception ex)
+            {
+                RagnaroksWrath.Log.LogError($"WorldTick: world reset failed: {ex}");
+            }
+
+            RagnaroksWrath.Log.LogInfo(
+                $"WorldTick: world closed ({why}) - saved and cleared; the next world loads its own state.");
         }
 
         private void OnDestroy()

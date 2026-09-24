@@ -1,5 +1,59 @@
 # Changelog
 
+## Unreleased
+
+**Leaving one world and starting another in the same game session no longer carries the first
+world's state into the second.** The rest of this entry comes from a code review of 0.27.5. No
+config keys change. One save file gains an optional column: the titles file marks a player who has
+earned Winterborn this winter with a `W`, so the award stays once per winter across a restart. Older
+builds ignore the column and drop the mark on their next save.
+
+- **Each world keeps its own state.** Going back to the main menu and then starting or hosting
+  another world kept the first world's zone drift, titles, grudges, sickness and relic stones in
+  memory. They carried on in the second world at the same map positions, and the next autosave
+  wrote them over the second world's own files. Now a world's state is saved and cleared when you
+  leave it, and the next world loads its own. A dedicated server runs one world per start and was
+  never affected.
+- **Joining a server after playing a local world reads the server's state.** The same leftover
+  data made a player who went on to join a server see their local world's plague, frost, grudges
+  and relic auras instead of the server's. The same fix covers it.
+- **A storm no longer ends another event.** Valheim runs one event at a time, and starting a storm
+  ended whatever was running: a raid on a base, or Valkyrie's Cargo's merchant visit. A storm that
+  comes due during another event now waits, and starts once that event is over. If the storm event
+  is missing from the game's list, the storm no longer starts at all (the log says why), where
+  before it ended the running event and announced a storm that never came. One side effect: a
+  vanilla raid pauses while no player is near it, so a raid everyone walked away from can hold
+  storms back until someone returns to it or the game replaces it with another event.
+- **Titles no longer swap back and forth.** Stormrider, Plaguewalker and Winterborn were awarded
+  again on every title check while their condition held. Two that held together (plague in winter,
+  a storm over plague) swapped every check, each swap announced to everyone. Every title is now
+  earned once, when its condition starts. Winterborn's clock now starts again at zero each winter,
+  so it is earned once per winter, after that winter's full stretch online; before, a server up
+  through two winters awarded it the moment the second began. Titles earned at the same moment
+  give one announcement.
+- **Arson blame stays with the arsonist's own fire.** FireFront used to report a single igniter for
+  the whole map, so while one player's fire burned, every other fire anywhere was booked as their
+  harm.
+  - With a FireFront that reports who lit each fire (1.0.2 or later), each fire's harm goes
+    to the player who lit it, or the fire it spread from. Natural fires and lightning blame nobody,
+    and a storm no longer holds its lightning back while someone's fire burns.
+  - With FireFront 1.0.1 or older, harm is booked only in the zones next to where that player's
+    fire has spread. A fire elsewhere on the map is no longer blamed on them. A fire started right
+    next to theirs, while theirs still burns, can still be.
+- **Autosaves stay quick on old worlds.** Saving the zone file compared every visited zone against
+  every stored one, a pause on the server that grew with the world's age. It is now a direct lookup.
+- **Nearby messages are rate-limited per player.** One shared limit meant a message to one player
+  could silently swallow another player's one-time message elsewhere on the map, such as a relic's
+  story or the line a player gets on first reaching barren or festering ground.
+- **Relic and zone messages are checked.** The server drops relic and zone messages from a client
+  that claims to be someone else. Clients accept relic and zone updates only from the server. A
+  report that a relic stone broke counts only from a player near it, a report that one was raised
+  only from the player the server asked to raise it, and the breaker is blamed only when they are
+  near the stone.
+- **A mod manager now installs FireFront 1.0.2 with it** (was 1.0.0). It is the first FireFront
+  that reports who lit each fire. Installing by hand, an older FireFront now names itself at boot,
+  with what it still does and what needs the update.
+
 ## 0.27.5
 
 **A storm now blows over whether or not anyone is near it.** Every storm was registered as a vanilla
@@ -16,19 +70,21 @@ later storm, and kept counting against the whole world's condition.
   position and takes everything else from the running build, so the first boot on 0.27.5 resumes a
   frozen storm and it runs out the time it had left. No migration, and nobody has to go and find it.
 - **Verified on a dedicated server (Valheim 1.0.15) in three steps, each a control for the next:**
-  - On 0.27.4, a player walked out of a 180-second storm and stayed online. Five minutes after it
-    began, it had not ended.
+  - On 0.27.4, a player walked out of a 180-second storm and stayed online, far from it. Five
+    minutes after it began, it had not ended; the player then logged off, and it still had not
+    ended when the server was stopped.
   - That frozen storm was saved, and the server booted on 0.27.5 with nobody online. It came back
     from the save and ended within two and a half minutes.
-  - On 0.27.5, a player walked out of a new 180-second storm and stayed online. It ended 181 seconds
-    after it began.
+  - On 0.27.5, a player walked out of a new 180-second storm and stayed online, far from it. It
+    ended 181 seconds after it began.
 - **A storm's start is now reported the moment it starts,** not on the next weather tick. Now that a
   storm runs out unwatched, the shortest allowed storm (30 s) could otherwise begin and end between two
   ticks of the slowest allowed weather interval (60 s), and never be logged, announced as passed, or
   seen by anything that reacts to storms.
 - **`StormDurationSeconds` is now time from the start, in game seconds.** Its description said vanilla
   paused it while nobody was near. Only a single-player pause stops it now, as it stops every clock
-  in the game. The key and its default are unchanged, so no config file changes.
+  in the game. The key and its default are unchanged, so no configured value changes; the first boot
+  only rewrites that setting's description in the config file.
 
 ## 0.27.4
 
@@ -85,8 +141,8 @@ player twice reached `NemesisMaxLevel` 3 and became close to unbeatable.
   the nest and bone-pile path, already gated on `m_maxLevel < 2`, and boss altars never go through
   it. Checked rather than assumed, because fixing one of two identical hazards is how this returns.
 - **Verified in-game on a dedicated server before release.** Eikthyr killed the same player twice
-  and stayed at level 1 while his boss health bar read `slayer of TestNomad x2`; a greydwarf killed
-  them twice and climbed 1 → 2 → 3, stopping at the cap. The greydwarf is the half that matters —
+  and stayed at level 1 while his boss health bar carried the slayer mark with its count of two; a
+  greydwarf killed them twice and climbed 1 → 2 → 3, stopping at the cap. The greydwarf is the half that matters —
   a guard that suppressed every level-up would make the boss row look identical.
 
 **Also in this release: the DLL no longer carries the build machine's folders.** Every build

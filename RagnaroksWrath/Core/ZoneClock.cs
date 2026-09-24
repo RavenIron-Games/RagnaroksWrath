@@ -101,5 +101,12 @@ namespace RavenIron.RagnaroksWrath.Core
         public static IEnumerable<KeyValuePair<ZoneKey, long>> Snapshot() => _lastContactUtcTicks;
 
         public static void Restore(ZoneKey zone, long utcTicks) => _lastContactUtcTicks[zone] = utcTicks;
+
+        /// <summary>
+        /// One zone's stored contact stamp, for the save. A dictionary lookup, not a scan of
+        /// <see cref="Snapshot"/>: the save used to walk every tracked zone for every stored
+        /// zone, which grows as (explored area)^2 on the server's main thread.
+        /// </summary>
+        public static bool TryGet(ZoneKey zone, out long utcTicks) => _lastContactUtcTicks.TryGetValue(zone, out utcTicks);
     }
 }

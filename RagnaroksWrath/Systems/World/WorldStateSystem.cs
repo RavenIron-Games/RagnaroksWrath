@@ -28,6 +28,13 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
         private bool _hasDerivedOnce;
 
+        /// <summary>World closing (WorldTick.EndWorld): drop the static state the old world left.</summary>
+        internal static void ResetWorldState()
+        {
+            Metrics = default;
+            Condition = WorldCondition.Stable;
+        }
+
         public void Initialise()
         {
             RagnaroksWrath.Log.LogInfo(

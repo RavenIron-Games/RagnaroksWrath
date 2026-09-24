@@ -110,6 +110,14 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// <summary>How many zones are at war right now — the console's question.</summary>
         public static int ContestedZoneCount => _warIntensity.Count;
 
+        /// <summary>World closing (WorldTick.EndWorld): drop the static state the old world left.</summary>
+        internal static void ResetWorldState()
+        {
+            _careHolders.Clear();
+            _harmHolders.Clear();
+            _warIntensity.Clear();
+        }
+
         public void Initialise()
         {
             _cropPrefabs = (ModConfig.FarmingCropPrefabs.Value ?? "")

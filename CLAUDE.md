@@ -16,7 +16,7 @@ build UI.
 .\tools\fetch-libs.ps1     # once per machine: copies game/BepInEx DLLs into libs\
 .\tools\run-tests.ps1      # off-game logic tests (net10) — run before every commit
 # After ANY Valheim update, before shipping: does the game still have what we reach for?
-# Covers ALL SIX mods since 2026-09-11 (93 surfaces), not just this one and FireFront.
+# Covers ALL SIX mods since 2026-09-11 (104 surfaces since 2026-09-24), not just this one and FireFront.
 dotnet build tools\apiprobe\Probe.csproj -v q --nologo
 .\tools\apiprobe\bin\Debug\net10.0\Probe.exe "<Valheim>\valheim_Data\Managed"
 # And the other half of that question, which apiprobe CANNOT answer: does the binary we ALREADY
@@ -215,13 +215,16 @@ loads a site for ~180s then unloads it.
   player-built pieces, behind a config toggle.
 
 **FireFront (Raven Iron)** — our own structure-fire mod; the fire simulation this mod's
-FireSystem bridges to instead of competing with. THREE reflected surfaces, all documented in
+FireSystem bridges to instead of competing with. FOUR reflected surfaces, all documented in
 FireFront's source as load-bearing cross-mod contracts: the read API
 (`FireManager.CollectActiveFirePositions(List<Vector3>)`, 0.17.2+ — renaming it silently
 disarms Scorch here, and FireSystem warns every tick when it cannot resolve), the igniter
 property (`CurrentFireIgniterPlayerId`, 0.17.3+ — arson attribution; optional, absence logs
-once), and the write (`IgniteGroundNear(Vector3, float)`, promoted 2026-08-27 — storm
-lightning's spark; optional, absence logs once). Since 0.23.0 FireFront is also a listed
+once), the per-fire igniters (`CollectActiveFiresWithIgniters(List<Vector3>, List<long>)`,
+1.0.2+ — per-fire arson blame; optional, older FireFront falls back to the single igniter blamed
+only where its fire spread, and a 1.0.2+ FireFront without it warns that the API moved), and the
+write (`IgniteGroundNear(Vector3, float)`, promoted 2026-08-27 — storm lightning's spark;
+optional, absence logs once). apiprobe cannot see these: it loads only the Valheim assemblies. Since 0.23.0 FireFront is also a listed
 manifest dependency — packaging only; the code stays soft.
 
 **SkyNet Redux** patches `EnvMan`
@@ -247,7 +250,11 @@ overlap if it is ever installed alongside.
   exactly `RavenIronStudios-FireFront-0.21.2` while FireFront 1.0.0 was live, so 0.27.4 exists
   only to move that line. **Before every RW release, compare the FireFront pin with
   `valheim.hexium.gg/api/experimental/package/RavenIronStudios/FireFront/`**, and move it whenever a
-  FireFront release has shipped since (after checking the reflected surfaces still resolve). Hexium DOES
+  FireFront release has shipped since (after checking the reflected surfaces still resolve). **The pin may
+  also LEAD the store, and then the upload order is the gate:** since 2026-09-24 the manifest pins
+  `RavenIronStudios-FireFront-1.0.2` (per-fire arson blame) while the store's newest is 1.0.1. Upload
+  FireFront 1.0.2 first, confirm `…/package/RavenIronStudios/FireFront/1.0.2/` answers 200 rather than
+  404, and only then upload this mod; a pin the store cannot resolve fails the install. Hexium DOES
   list the current BepInExPack whatever the zip says — every Raven Iron listing reads 5.4.2350,
   including one uploaded before 5.4.2350 existed, so it resolves when it lists rather than on
   upload — and does NOT do that for any other dependency, which is why this one stayed wrong.
@@ -421,13 +428,15 @@ overlap if it is ever installed alongside.
 **Built and VERIFIED IN-GAME (2026-09-23, 0.27.5, dedicated server Storm10 on Valheim 1.0.15): storms
 end unwatched.** Reported the same day: a storm never stopped once its zone emptied. Cause in the
 known trap above. Three phases, each the control for the next: on **0.27.4** a player walked out of a
-180 s storm and stayed online, and at 5 min 12 s it had not ended; the server was stopped with that
+180 s storm and stayed online, and at 5 min 12 s it had not ended (they logged off 3 s later, and it
+still had not ended when the server stopped 16 s after that); the server was stopped with that
 frozen storm saved, booted on **0.27.5** with nobody online, vanilla restored the storm by name
 (`Random event set: ragnarokswrath_devastating_storm_dry`) and it logged `storm ended` within 2½ min;
 on 0.27.5 a player walked out of a fresh 180 s storm and it ended at 181 s. The same run showed the
 review fix: `storm began` now lands in the same second as `storm started`, where 0.27.4 logged it a
-weather tick later. Storm10 test settings (60–120 s interval, 180 s storms, verbose) are backed up
-beside the cfg as `.pre-stormclock-20260923`.
+weather tick later. Storm10 is back on its production storm settings (`.pre-stormclock-20260923`
+holds them); the test settings (60–120 s interval, 180 s storms, verbose) are kept beside the cfg as
+`.stormclock-test-20260923`. It still runs RW 0.27.5, with 0.27.4 kept as `.0.27.4.bak`.
 **0.27.4 (2026-09-23): the FireFront pin moved 0.21.2 → 1.0.0, and BepInExPack 5.4.2333 → 5.4.2350.
 No code changed.** See the dependency trap above. FireFront 1.0.0's surfaces were checked by
 decompiling the copy Hexium serves and by booting Storm10 on RW 0.27.4 + FireFront 1.0.0 (both

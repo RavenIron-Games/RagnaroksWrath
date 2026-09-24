@@ -59,15 +59,5 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 RagnaroksWrath.Log.LogWarning($"[{Name}] could not read wind: {ex.Message}");
             }
         }
-
-        /// <summary>
-        /// Gameplay wind at a position: vanilla's wind, amplified inside a storm.
-        ///
-        /// Positional because storms are. A gale on the other side of the map must not drive fire
-        /// spread here, and taking a position is what stops a later caller from reaching for the
-        /// global figure by accident.
-        /// </summary>
-        public static float IntensityAt(Vector3 position)
-            => WindState.Combine(BaseIntensity, WeatherSystem.WindMultiplierAt(position));
     }
 }

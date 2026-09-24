@@ -238,6 +238,20 @@ namespace RavenIron.RagnaroksWrath.Core
         // ---- load -----------------------------------------------------------------------
 
         /// <summary>
+        /// The world is closing: forget it. Clears everything in memory and drops the loaded flag,
+        /// so the next world reads its OWN file instead of inheriting this one, and a pure client
+        /// stops mistaking itself for the authority. Does NOT save; flush first. ZoneClock is
+        /// cleared separately (its contact stamps are per world too).
+        /// </summary>
+        public static void Unload()
+        {
+            _zones.Clear();
+            _dirty = false;
+            _loaded = false;
+            _warnedNoSavePath = false;
+        }
+
+        /// <summary>
         /// Load state for the current world. Safe to call repeatedly; only the first call for a
         /// given world does work.
         ///
@@ -398,11 +412,9 @@ namespace RavenIron.RagnaroksWrath.Core
                 {
                     if (kv.Value.IsDefault) continue;   // sparseness, enforced at the boundary
 
-                    long ticks = 0;
-                    foreach (KeyValuePair<ZoneKey, long> c in ZoneClock.Snapshot())
-                    {
-                        if (c.Key == kv.Key) { ticks = c.Value; break; }
-                    }
+                    // O(1) per zone. This was a linear scan of every contacted zone per stored
+                    // zone, a hitch that grew with the world's age.
+                    if (!ZoneClock.TryGet(kv.Key, out long ticks)) ticks = 0;
 
                     AppendLine(sb, kv.Key, kv.Value, ticks);
                 }

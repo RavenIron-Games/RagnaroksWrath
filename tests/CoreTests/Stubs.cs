@@ -214,8 +214,20 @@ namespace BepInEx.Configuration
     {
         public abstract object BoxedValue { get; set; }
         public abstract object DefaultValue { get; }
+        public abstract Type SettingType { get; }
         public abstract string GetSerializedValue();
         public abstract void SetSerializedValue(string value);
+    }
+
+    /// <summary>
+    /// How BepInEx spells a value in a config file. The real one is a public static class, and the
+    /// real ConfigEntryBase.GetSerializedValue is exactly ConvertToString(BoxedValue, SettingType),
+    /// so the stub's entry routes through this too and the two cannot disagree.
+    /// </summary>
+    public static class TomlTypeConverter
+    {
+        public static string ConvertToString(object value, Type valueType)
+            => value is bool b ? (b ? "true" : "false") : Convert.ToString(value, CultureInfo.InvariantCulture);
     }
 
     public class ConfigEntry<T> : ConfigEntryBase
@@ -254,8 +266,12 @@ namespace BepInEx.Configuration
             return candidate;
         }
 
+        /// <summary>What BepInEx prints above the setting. The real ConfigEntryBase exposes the same.</summary>
+        public ConfigDescription Description => _description;
+
         public override object BoxedValue { get => Value; set => Value = (T)value; }
         public override object DefaultValue => _default;
+        public override Type SettingType => typeof(T);
 
         /// <summary>
         /// Invariant culture, and lower-case for a bool, because that is how BepInEx's own
@@ -263,8 +279,7 @@ namespace BepInEx.Configuration
         /// shipping mod writes "0.5" is exactly the locale bug this repo's working agreement warns
         /// about for anything crossing a file.
         /// </summary>
-        public override string GetSerializedValue()
-            => Value is bool b ? (b ? "true" : "false") : Convert.ToString(Value, CultureInfo.InvariantCulture);
+        public override string GetSerializedValue() => TomlTypeConverter.ConvertToString(Value, typeof(T));
 
         /// <summary>
         /// SWALLOWS a value it cannot parse and leaves the entry untouched — not laziness, but what
@@ -282,10 +297,19 @@ namespace BepInEx.Configuration
     }
 
     /// <summary>
-    /// A ConfigFile that actually REMEMBERS what was bound, so the config migration can be tested
-    /// against the shipping ModConfig rather than described. The original stub returned a fresh
-    /// entry per Bind and stored nothing, which is fine for counting binds and useless for
-    /// proving a migration reached the key it named.
+    /// A ConfigFile that behaves like BepInEx's where the config migration can tell the difference
+    /// (read out of libs\BepInEx.dll with ilspycmd, 2026-09-24):
+    ///   - the file's lines are loaded ONCE, and every line no Bind has claimed is an ORPHAN that
+    ///     Save writes back, exactly as BepInEx keeps them in its private OrphanedEntries;
+    ///   - Bind claims an orphan by exact section and key and applies its text;
+    ///   - Remove takes a bound entry out, and a removed entry is gone from the next Save;
+    ///   - Save writes entries then orphans, grouped by section, sections sorted by name.
+    /// Save only touches the disk when <see cref="WriteOnSave"/> is set, so older tests that keep
+    /// their own fixture file on disk are unaffected; a multi-boot test sets it and reads back what
+    /// the "mod" wrote. <see cref="ThrowOnSave"/> makes a save fail the way a locked file does.
+    ///
+    /// The original stub returned a fresh entry per Bind and stored nothing, which is fine for
+    /// counting binds and useless for proving a migration reached the key it named.
     /// </summary>
     public class ConfigFile
     {
@@ -299,48 +323,70 @@ namespace BepInEx.Configuration
         /// <summary>Where the pre-bind snapshot is read from. Settable so a test can point it at a real temp file.</summary>
         public string ConfigFilePath { get; set; } = "";
 
-        public ConfigEntry<T> Bind<T>(string section, string key, T defaultValue,
-                                      ConfigDescription description = null)
-            => BindCore(section, key, defaultValue, description);
+        /// <summary>BepInEx's own switch. The stub never saves by itself, so this is only recorded, for tests to assert on.</summary>
+        public bool SaveOnConfigSet { get; set; } = true;
 
-        public ConfigEntry<T> Bind<T>(string section, string key, T defaultValue, string description)
-            => BindCore(section, key, defaultValue, new ConfigDescription(description));
+        /// <summary>When set, Save writes the file to <see cref="ConfigFilePath"/> the way BepInEx lays it out.</summary>
+        public bool WriteOnSave { get; set; }
+
+        /// <summary>When set, Save throws before writing, like a file another process has locked.</summary>
+        public bool ThrowOnSave { get; set; }
 
         /// <summary>
-        /// Values already in the file, loaded once on the first Bind — because the real BepInEx
-        /// applies a stored value over the shipped default, and a stub that did not would make an
-        /// admin's setting invisible to every test. That matters here specifically: a migration
-        /// that trampled a value somebody had already set would pass against a stub that pretends
-        /// nobody ever set one.
+        /// When set, Save fails the OTHER way the real one can: BepInEx opens the file with
+        /// `new StreamWriter(path, append: false)`, which empties it on open, so a disk that fills
+        /// part-way leaves a truncated file behind. This writes the first half and throws.
+        /// </summary>
+        public bool ThrowMidSave { get; set; }
+
+        /// <summary>What the last successful Save held, "Section::Key" to text: bound entries and orphans alike.</summary>
+        public Dictionary<string, string> LastSaved { get; private set; }
+
+        public ConfigEntry<T> Bind<T>(string section, string key, T defaultValue,
+                                      ConfigDescription description = null)
+            => BindCore(new ConfigDefinition(section, key), defaultValue, description);
+
+        public ConfigEntry<T> Bind<T>(string section, string key, T defaultValue, string description)
+            => BindCore(new ConfigDefinition(section, key), defaultValue, new ConfigDescription(description));
+
+        public ConfigEntry<T> Bind<T>(ConfigDefinition definition, T defaultValue, ConfigDescription description = null)
+            => BindCore(definition, defaultValue, description);
+
+        /// <summary>
+        /// Lines in the file that no Bind has claimed, loaded once on first use — because the real
+        /// BepInEx applies a stored value over the shipped default, and a stub that did not would
+        /// make an admin's setting invisible to every test.
         ///
         /// Parsed with the shipping ConfigLedger.ParseIni rather than a second parser, per the
         /// working agreement's "a harness that duplicates logic proves nothing and drifts". That
         /// parser is pinned separately by its own tests against hand-written expectations, so it
         /// cannot quietly agree with itself here.
         /// </summary>
-        private Dictionary<string, string> _stored;
+        private Dictionary<string, string> _orphans;
 
-        private ConfigEntry<T> BindCore<T>(string section, string key, T defaultValue,
-                                           ConfigDescription description)
+        private void EnsureLoaded()
         {
-            _bound.Add($"{section}/{key}");
+            if (_orphans != null) return;
+            // Ordinal, matching both the shipping ParseIni and BepInEx's own key comparison.
+            _orphans = !string.IsNullOrEmpty(ConfigFilePath) && System.IO.File.Exists(ConfigFilePath)
+                ? RavenIron.RagnaroksWrath.Core.ConfigLedger.ParseIni(System.IO.File.ReadAllLines(ConfigFilePath))
+                : new Dictionary<string, string>(StringComparer.Ordinal);
+        }
 
-            var def = new ConfigDefinition(section, key);
+        private ConfigEntry<T> BindCore<T>(ConfigDefinition def, T defaultValue, ConfigDescription description)
+        {
+            _bound.Add($"{def.Section}/{def.Key}");
+            EnsureLoaded();
+
             if (_entries.TryGetValue(def, out ConfigEntryBase existing)) return (ConfigEntry<T>)existing;
 
-            if (_stored == null)
-            {
-                // Ordinal, matching both the shipping ParseIni and BepInEx's own key comparison.
-                _stored = !string.IsNullOrEmpty(ConfigFilePath) && System.IO.File.Exists(ConfigFilePath)
-                    ? RavenIron.RagnaroksWrath.Core.ConfigLedger.ParseIni(System.IO.File.ReadAllLines(ConfigFilePath))
-                    : new Dictionary<string, string>(StringComparer.Ordinal);
-            }
-
             var entry = new ConfigEntry<T>(defaultValue, description);
-            if (_stored.TryGetValue(section + "::" + key, out string raw))
+            string slot = def.Section + "::" + def.Key;
+            if (_orphans.TryGetValue(slot, out string raw))
             {
                 // A value the file cannot express as T is what BepInEx itself treats as absent.
                 try { entry.SetSerializedValue(raw); } catch { }
+                _orphans.Remove(slot);
             }
 
             _entries[def] = entry;
@@ -349,6 +395,57 @@ namespace BepInEx.Configuration
 
         public bool ContainsKey(ConfigDefinition def) => _entries.ContainsKey(def);
         public ConfigEntryBase this[ConfigDefinition def] => _entries[def];
-        public void Save() { SaveCount++; }
+        public bool Remove(ConfigDefinition def) => _entries.Remove(def);
+
+        /// <summary>Every bound definition, as the real ConfigFile exposes through its dictionary interface.</summary>
+        public ICollection<ConfigDefinition> Keys => _entries.Keys;
+
+        /// <summary>Whether a line is still an unclaimed orphan — what BepInEx would write back without anyone reading it.</summary>
+        public bool HasOrphan(string section, string key)
+        {
+            EnsureLoaded();
+            return _orphans.ContainsKey(section + "::" + key);
+        }
+
+        public void Save()
+        {
+            if (ThrowOnSave) throw new System.IO.IOException("the stub's file is locked");
+            SaveCount++;
+            EnsureLoaded();
+
+            var all = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var kv in _entries) all[kv.Key.Section + "::" + kv.Key.Key] = kv.Value.GetSerializedValue();
+            foreach (var kv in _orphans) all[kv.Key] = kv.Value;
+
+            if (!WriteOnSave || string.IsNullOrEmpty(ConfigFilePath))
+            {
+                if (ThrowMidSave) throw new System.IO.IOException("the stub's disk filled part-way through the save");
+                LastSaved = all;
+                return;
+            }
+
+            var bySection = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var kv in all)
+            {
+                int i = kv.Key.IndexOf("::", StringComparison.Ordinal);
+                string section = kv.Key.Substring(0, i);
+                if (!bySection.TryGetValue(section, out var lines)) bySection[section] = lines = new List<string>();
+                lines.Add(kv.Key.Substring(i + 2) + " = " + kv.Value);
+            }
+            var file = new List<string>();
+            foreach (var s in bySection)
+            {
+                file.Add("[" + s.Key + "]");
+                file.AddRange(s.Value);
+                file.Add("");
+            }
+            if (ThrowMidSave)
+            {
+                System.IO.File.WriteAllLines(ConfigFilePath, file.GetRange(0, file.Count / 2));
+                throw new System.IO.IOException("the stub's disk filled part-way through the save");
+            }
+            LastSaved = all;
+            System.IO.File.WriteAllLines(ConfigFilePath, file);
+        }
     }
 }

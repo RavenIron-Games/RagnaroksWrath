@@ -15,7 +15,7 @@ namespace RavenIron.RagnaroksWrath
     {
         public const string PluginId      = "com.raveniron.ragnarokswrath";
         public const string PluginName    = "Ragnarok's Wrath";
-        public const string PluginVersion = "0.27.5";
+        public const string PluginVersion = "0.28.0";
 
         public static RagnaroksWrath Instance { get; private set; }
         public static ManualLogSource Log { get; private set; }
@@ -46,7 +46,12 @@ namespace RavenIron.RagnaroksWrath
             Instance = this;
             Log = Logger;
 
-            ModConfig.Bind(base.Config);
+            // Two files since 0.28.0: the settings an owner changes, and the tuning beside them.
+            // Nothing is written until ModConfig.Bind finishes (see ConfigMigration), so the
+            // advanced file is created on first boot with every setting in it, not empty.
+            var advancedConfig = new BepInEx.Configuration.ConfigFile(
+                System.IO.Path.Combine(Paths.ConfigPath, ConfigLedger.AdvancedFileName), false, Info.Metadata);
+            ModConfig.Bind(base.Config, advancedConfig);
 
             _harmony = new Harmony(PluginId);
             _harmony.PatchAll();
@@ -79,8 +84,11 @@ namespace RavenIron.RagnaroksWrath
         /// Every system registers here, in one place. Systems are ticked in registration order
         /// by WorldTick's round-robin cursor, so ordering here is a mild scheduling hint only —
         /// no system may depend on another having ticked first within the same frame.
+        ///
+        /// Also called by WorldTick.EndWorld: every world gets fresh system instances, so no
+        /// per-world state can survive in an instance field.
         /// </summary>
-        private static void RegisterSystems()
+        internal static void RegisterSystems()
         {
             WorldTick.Register(new Systems.World.SeasonSystem());
             WorldTick.Register(new Systems.World.WeatherSystem());

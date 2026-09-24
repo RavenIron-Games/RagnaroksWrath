@@ -143,6 +143,7 @@ namespace RavenIron.RagnaroksWrath.Net
 
         private static void RPC_ZoneState(long sender, ZPackage pkg)
         {
+            if (!SenderGuard.FromServer(sender)) return;   // only the server's ring push is truth
             try
             {
                 int count = pkg.ReadInt();
