@@ -156,6 +156,19 @@ namespace RavenIron.RagnaroksWrath.Core
             _dirty = true;
         }
 
+        /// <summary>
+        /// The world is closing: forget it. Clears everything in memory and drops the loaded flag,
+        /// so the next world reads its OWN file instead of inheriting this one, and a pure client
+        /// stops mistaking itself for the authority. Does NOT save; flush first.
+        /// </summary>
+        public static void Unload()
+        {
+            _rows.Clear();
+            _loaded = false;
+            _dirty = false;
+            _plantWatermark = 0;
+        }
+
         public static void Load()
         {
             _rows.Clear();

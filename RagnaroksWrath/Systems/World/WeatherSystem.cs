@@ -75,6 +75,16 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// </summary>
         public static bool StormIsDry { get; private set; }
 
+        /// <summary>World closing (WorldTick.EndWorld): drop the static state the old world left.</summary>
+        internal static void ResetWorldState()
+        {
+            CurrentEnvironment = "";
+            StormActive = false;
+            StormIsDry = false;
+            StormCentre = Vector3.zero;
+            StormRange = 0f;
+        }
+
         /// <summary>True for either storm event. Liveness must accept both names, or a dry storm reads as no storm.</summary>
         public static bool IsStormEvent(string eventName) => StormLook.IsStorm(eventName);
 

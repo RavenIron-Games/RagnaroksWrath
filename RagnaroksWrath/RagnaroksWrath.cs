@@ -79,8 +79,11 @@ namespace RavenIron.RagnaroksWrath
         /// Every system registers here, in one place. Systems are ticked in registration order
         /// by WorldTick's round-robin cursor, so ordering here is a mild scheduling hint only —
         /// no system may depend on another having ticked first within the same frame.
+        ///
+        /// Also called by WorldTick.EndWorld: every world gets fresh system instances, so no
+        /// per-world state can survive in an instance field.
         /// </summary>
-        private static void RegisterSystems()
+        internal static void RegisterSystems()
         {
             WorldTick.Register(new Systems.World.SeasonSystem());
             WorldTick.Register(new Systems.World.WeatherSystem());

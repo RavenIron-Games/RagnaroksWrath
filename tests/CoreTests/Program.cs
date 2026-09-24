@@ -58,6 +58,7 @@ namespace RagnaroksWrath.Tests
             FarmingGrowthTests();
             PlagueGenesisTests();
             LightningStrikeTests();
+            WorldResetTests();
 
             Console.WriteLine($"\n{_passed} passed, {_failed} failed.");
             return _failed == 0 ? 0 : 1;
@@ -2174,6 +2175,145 @@ namespace RagnaroksWrath.Tests
                 DistXZ(anchor, LightningStrike.StrikePoint(anchor, 0.0, 0.0, -10f, 40f)) < 1e-3f);
             Check("an inverted pair collapses to the surviving value",
                 Math.Abs(DistXZ(anchor, LightningStrike.StrikePoint(anchor, 0.9999999, 0.3, 30f, 5f)) - 30f) < 1e-2f);
+        }
+
+        // ---- world reset (review 2026-09-24, must-fix 1) and the save's clock lookup ----
+
+        private static void WorldResetTests()
+        {
+            Console.WriteLine("\nWorld reset");
+
+            ZoneClock.Clear();
+            var stamped = new ZoneKey(4, -9);
+            ZoneClock.Restore(stamped, 638000000000000000L);
+            Check("ZoneClock.TryGet finds a stored stamp",
+                ZoneClock.TryGet(stamped, out long got) && got == 638000000000000000L);
+            Check("ZoneClock.TryGet reports a zone it has never seen",
+                !ZoneClock.TryGet(new ZoneKey(5, -9), out long none) && none == 0L);
+
+            string dir = Path.Combine(Path.GetTempPath(), "rw_reset_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+
+            try
+            {
+                // World A: drift with a contact stamp, saved.
+                Persistence.OverrideDirectory = dir;
+                Persistence.OverrideWorldUid = 1111UL;
+                ZoneClock.Clear();
+                Persistence.Load();
+                var zone = new ZoneKey(10, 20);
+                Persistence.Set(zone, new ZoneState { Plague = 0.6f });
+                Persistence.Set(new ZoneKey(11, 20), new ZoneState { Frost = 0.3f });   // no stamp
+                ZoneClock.Restore(zone, 638111111111111111L);
+                ZoneClock.Restore(new ZoneKey(99, 99), 638222222222222222L);   // contacted, default state
+                Persistence.Save(force: true);
+
+                ZoneClock.Clear();
+                Persistence.Load();
+                Check("a zone's contact stamp survives the save's lookup",
+                    ZoneClock.TryGet(zone, out long back) && back == 638111111111111111L);
+                Check("a stored zone with no stamp saves as 0 and reloads without one",
+                    !ZoneClock.TryGet(new ZoneKey(11, 20), out _) && Persistence.TrackedZoneCount == 2);
+
+                // The world closes: what EndWorld does to the zone store.
+                Persistence.Unload();
+                ZoneClock.Clear();
+                Check("an unloaded store is empty and no longer claims to be the authority",
+                    !Persistence.IsLoaded && Persistence.TrackedZoneCount == 0 && ZoneClock.TrackedZoneCount == 0);
+
+                string fileA = Path.Combine(dir, "ragnarokswrath_zones_1111.dat");
+                string before = File.ReadAllText(fileA);
+                Persistence.Save(force: true);
+                Check("saving after unload writes nothing", File.ReadAllText(fileA) == before);
+
+                // World B in the same process: its own (empty) state, and A's file untouched.
+                Persistence.OverrideWorldUid = 2222UL;
+                Persistence.Load();
+                Check("the next world starts from its own file, not the last world's memory",
+                    Persistence.IsLoaded && Persistence.TrackedZoneCount == 0
+                    && Persistence.Get(zone).Plague == 0f);
+                Persistence.Set(new ZoneKey(-1, -1), new ZoneState { Scorch = 0.2f });
+                Persistence.Save(force: true);
+
+                Persistence.Unload();
+                Persistence.OverrideWorldUid = 1111UL;
+                Persistence.Load();
+                Check("going back to the first world finds its own drift intact",
+                    Persistence.TrackedZoneCount == 2 && Math.Abs(Persistence.Get(zone).Plague - 0.6f) < 1e-6f
+                    && Persistence.Get(new ZoneKey(-1, -1)).Scorch == 0f);
+                Persistence.Unload();
+            }
+            finally
+            {
+                Persistence.OverrideDirectory = null;
+                Persistence.OverrideWorldUid = null;
+                ZoneClock.Clear();
+                try { Directory.Delete(dir, true); } catch { }
+            }
+
+            // Each ledger: Unload forgets, Load brings the file back.
+            string ldir = Path.Combine(Path.GetTempPath(), "rw_reset_l_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(ldir);
+            try
+            {
+                TitleStore.OverridePath = Path.Combine(ldir, "titles.dat");
+                TitleStore.Load();
+                TitleStore.Set(42L, "Stormrider");
+                TitleStore.Unload();
+                Check("TitleStore.Unload forgets the world", !TitleStore.IsLoaded && TitleStore.Count == 0);
+                TitleStore.Load();
+                Check("TitleStore reloads its own file after an unload", TitleStore.Get(42L) == "Stormrider");
+
+                HealthStore.OverridePath = Path.Combine(ldir, "health.dat");
+                HealthStore.Load();
+                HealthStore.Set(42L, 0.5f);
+                HealthStore.SaveIfDirty();
+                HealthStore.Set(43L, 0.25f);   // dirty, unsaved: Unload must not carry it anywhere
+                HealthStore.Unload();
+                HealthStore.SaveIfDirty();
+                Check("HealthStore.Unload forgets the world and saves nothing after",
+                    !HealthStore.IsLoaded && HealthStore.Count == 0);
+                HealthStore.Load();
+                Check("HealthStore reloads its own file after an unload",
+                    HealthStore.Count == 1 && Math.Abs(HealthStore.Get(42L) - 0.5f) < 1e-6f);
+
+                RivalryLedger.OverridePath = Path.Combine(ldir, "rivalry.dat");
+                RivalryLedger.Load();
+                RivalryLedger.AddHarm(new ZoneKey(1, 1), 42L, 0.5f);
+                RivalryLedger.PlantWatermark = 12345L;
+                RivalryLedger.SaveIfDirty();
+                RivalryLedger.Unload();
+                Check("RivalryLedger.Unload forgets rows and the watermark",
+                    !RivalryLedger.IsLoaded && RivalryLedger.Count == 0 && RivalryLedger.PlantWatermark == 0);
+                RivalryLedger.Load();
+                Check("RivalryLedger reloads its own file after an unload",
+                    RivalryLedger.Count == 1 && RivalryLedger.PlantWatermark == 12345L);
+
+                RelicLedger.OverridePath = Path.Combine(ldir, "relic.dat");
+                RelicLedger.Load();
+                RelicLedger.SetRelic(new ZoneKey(2, 2),
+                    new RelicLedger.Relic { Type = RelicMath.Fire, Cursed = false, Day = 7 });
+                RelicLedger.AddPending(new ZoneKey(3, 3),
+                    new RelicLedger.Relic { Type = RelicMath.Fire, Cursed = false, Day = 8 });
+                RelicLedger.SetEraSnapshot(new ZoneKey(4, 4), 1f);
+                RelicLedger.SaveIfDirty();
+                RelicLedger.Unload();
+                Check("RelicLedger.Unload forgets relics, pending stones and the era",
+                    !RelicLedger.IsLoaded && RelicLedger.RelicCount == 0
+                    && RelicLedger.PendingCount == 0 && !RelicLedger.EraArmed);
+                RelicLedger.Load();
+                Check("RelicLedger reloads its own file after an unload",
+                    RelicLedger.RelicCount == 1 && RelicLedger.PendingCount == 1 && RelicLedger.EraArmed);
+            }
+            finally
+            {
+                TitleStore.OverridePath = null;
+                HealthStore.OverridePath = null;
+                RivalryLedger.OverridePath = null;
+                RelicLedger.OverridePath = null;
+                TitleStore.Unload(); HealthStore.Unload(); RivalryLedger.Unload(); RelicLedger.Unload();
+                try { Directory.Delete(ldir, true); } catch { }
+            }
         }
 
         private static float DistXZ(Vector3 a, Vector3 b)

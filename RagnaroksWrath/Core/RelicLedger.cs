@@ -127,6 +127,18 @@ namespace RavenIron.RagnaroksWrath.Core
 
         public static IEnumerable<KeyValuePair<ZoneKey, float>> EraSnapshot() => _era;
 
+        /// <summary>
+        /// The world is closing: forget it. Clears everything in memory and drops the loaded flag,
+        /// so the next world reads its OWN file instead of inheriting this one, and a pure client
+        /// stops mistaking itself for the authority. Does NOT save; flush first.
+        /// </summary>
+        public static void Unload()
+        {
+            _peaks.Clear(); _relics.Clear(); _pending.Clear(); _era.Clear();
+            _loaded = false;
+            _dirty = false;
+        }
+
         public static void Load()
         {
             _peaks.Clear(); _relics.Clear(); _pending.Clear(); _era.Clear();

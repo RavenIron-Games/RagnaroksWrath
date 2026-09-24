@@ -48,6 +48,9 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
         private readonly List<ZoneKey> _scratch = new List<ZoneKey>(16);
 
+        /// <summary>World closing (WorldTick.EndWorld): drop the static state the old world left.</summary>
+        internal static void ResetWorldState() => _warResults.Clear();
+
         /// <summary>RivalrySystem's hand-off at the contested->uncontested edge.</summary>
         public static void NotifyWarResolved(ZoneKey zone, bool wildWon)
         {
