@@ -97,6 +97,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         // global igniter, and then ArsonFootprint keeps the blame to the zones that fire reached.
         private MethodInfo _collectWithIgnitersMethod;
         private bool _collectWithIgnitersResolved;
+        private System.Version _fireFrontVersion;    // from Initialise; null until FireFront is found
         private bool _perFire;                     // this tick's collect carried per-fire igniters
         private readonly List<long> _fireIgniters = new List<long>(64);
         private readonly object[] _collectWithIgnitersArgs = new object[2];
@@ -133,6 +134,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             }
 
             System.Version version = Chainloader.PluginInfos[FireFrontGuid].Metadata.Version;
+            _fireFrontVersion = version;
             RagnaroksWrath.Log.LogInfo(
                 $"[{Name}] FireFront {version} detected — bridging. Burning zones gain " +
                 $"{ModConfig.FireScorchPerMinute.Value:F3} scorch/min.");
@@ -456,10 +458,17 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                     _collectWithIgnitersMethod = _collectMethod.DeclaringType.GetMethod(
                         "CollectActiveFiresWithIgniters", BindingFlags.Public | BindingFlags.Instance,
                         null, new[] { typeof(List<Vector3>), typeof(List<long>) }, null);
-                    RagnaroksWrath.Log.LogInfo(_collectWithIgnitersMethod != null
-                        ? $"[{Name}] FireFront names each fire's igniter - arson is blamed per fire."
-                        : $"[{Name}] FireFront has no per-fire igniter (1.0.1 or older) - arson is " +
-                          "blamed on its single igniter, only where that fire has spread.");
+                    // Below 1.0.2 the boot line already named the fallback, so only the two cases
+                    // it could not know are logged here: the per-fire API found, or a FireFront new
+                    // enough to have it whose method has moved.
+                    if (_collectWithIgnitersMethod != null)
+                        RagnaroksWrath.Log.LogInfo(
+                            $"[{Name}] FireFront names each fire's igniter - arson is blamed per fire.");
+                    else if (_fireFrontVersion != null && _fireFrontVersion >= PerFireIgniterFireFrontVersion)
+                        RagnaroksWrath.Log.LogWarning(
+                            $"[{Name}] FireFront {_fireFrontVersion} has no CollectActiveFiresWithIgniters" +
+                            "(List<Vector3>, List<long>) - FireFront's API moved. Arson falls back to its " +
+                            "single igniter, blamed only where that fire has spread.");
                 }
 
                 object instance = _instanceProperty.GetValue(null);

@@ -84,7 +84,10 @@ class Probe
         M("EnvMan", "GetCurrentDay", AnyInstance);   // rule 5: private, reached by AccessTools
         F("ZDOVars", "s_creator", AnyStatic);
         // Review fixes, 2026-09-24: the storm's wait for a running event, the sender checks on
-        // relic and zone messages (SenderGuard, RelicSync), and the world-close reset.
+        // relic and zone messages (SenderGuard, RelicSync), and the world-close reset. Most are
+        // direct calls, so this catches a rename or a new signature, NOT a member turning private
+        // (M/F search public and non-public alike; rule 5's trap needs a visibility check).
+        F("ZNetPeer", "m_refPos", AnyInstance);          // RelicSync's reporter-near test
         M("RandEventSystem", "GetCurrentRandomEvent", AnyInstance);
         M("RandEventSystem", "HaveEvent", AnyInstance, "System.String");
         M("ZNet", "GetServerPeer", AnyInstance);

@@ -16,7 +16,7 @@ build UI.
 .\tools\fetch-libs.ps1     # once per machine: copies game/BepInEx DLLs into libs\
 .\tools\run-tests.ps1      # off-game logic tests (net10) — run before every commit
 # After ANY Valheim update, before shipping: does the game still have what we reach for?
-# Covers ALL SIX mods since 2026-09-11 (93 surfaces), not just this one and FireFront.
+# Covers ALL SIX mods since 2026-09-11 (104 surfaces since 2026-09-24), not just this one and FireFront.
 dotnet build tools\apiprobe\Probe.csproj -v q --nologo
 .\tools\apiprobe\bin\Debug\net10.0\Probe.exe "<Valheim>\valheim_Data\Managed"
 # And the other half of that question, which apiprobe CANNOT answer: does the binary we ALREADY
@@ -215,13 +215,16 @@ loads a site for ~180s then unloads it.
   player-built pieces, behind a config toggle.
 
 **FireFront (Raven Iron)** — our own structure-fire mod; the fire simulation this mod's
-FireSystem bridges to instead of competing with. THREE reflected surfaces, all documented in
+FireSystem bridges to instead of competing with. FOUR reflected surfaces, all documented in
 FireFront's source as load-bearing cross-mod contracts: the read API
 (`FireManager.CollectActiveFirePositions(List<Vector3>)`, 0.17.2+ — renaming it silently
 disarms Scorch here, and FireSystem warns every tick when it cannot resolve), the igniter
 property (`CurrentFireIgniterPlayerId`, 0.17.3+ — arson attribution; optional, absence logs
-once), and the write (`IgniteGroundNear(Vector3, float)`, promoted 2026-08-27 — storm
-lightning's spark; optional, absence logs once). Since 0.23.0 FireFront is also a listed
+once), the per-fire igniters (`CollectActiveFiresWithIgniters(List<Vector3>, List<long>)`,
+1.0.2+ — per-fire arson blame; optional, older FireFront falls back to the single igniter blamed
+only where its fire spread, and a 1.0.2+ FireFront without it warns that the API moved), and the
+write (`IgniteGroundNear(Vector3, float)`, promoted 2026-08-27 — storm lightning's spark;
+optional, absence logs once). apiprobe cannot see these: it loads only the Valheim assemblies. Since 0.23.0 FireFront is also a listed
 manifest dependency — packaging only; the code stays soft.
 
 **SkyNet Redux** patches `EnvMan`
@@ -247,7 +250,11 @@ overlap if it is ever installed alongside.
   exactly `RavenIronStudios-FireFront-0.21.2` while FireFront 1.0.0 was live, so 0.27.4 exists
   only to move that line. **Before every RW release, compare the FireFront pin with
   `valheim.hexium.gg/api/experimental/package/RavenIronStudios/FireFront/`**, and move it whenever a
-  FireFront release has shipped since (after checking the reflected surfaces still resolve). Hexium DOES
+  FireFront release has shipped since (after checking the reflected surfaces still resolve). **The pin may
+  also LEAD the store, and then the upload order is the gate:** since 2026-09-24 the manifest pins
+  `RavenIronStudios-FireFront-1.0.2` (per-fire arson blame) while the store's newest is 1.0.1. Upload
+  FireFront 1.0.2 first, confirm `…/package/RavenIronStudios/FireFront/1.0.2/` answers 200 rather than
+  404, and only then upload this mod; a pin the store cannot resolve fails the install. Hexium DOES
   list the current BepInExPack whatever the zip says — every Raven Iron listing reads 5.4.2350,
   including one uploaded before 5.4.2350 existed, so it resolves when it lists rather than on
   upload — and does NOT do that for any other dependency, which is why this one stayed wrong.

@@ -34,7 +34,7 @@ builds ignore the column and drop the mark on their next save.
 - **Arson blame stays with the arsonist's own fire.** FireFront used to report a single igniter for
   the whole map, so while one player's fire burned, every other fire anywhere was booked as their
   harm.
-  - With a FireFront that reports who lit each fire (versions after 1.0.1), each fire's harm goes
+  - With a FireFront that reports who lit each fire (1.0.2 or later), each fire's harm goes
     to the player who lit it, or the fire it spread from. Natural fires and lightning blame nobody,
     and a storm no longer holds its lightning back while someone's fire burns.
   - With FireFront 1.0.1 or older, harm is booked only in the zones next to where that player's
@@ -50,9 +50,9 @@ builds ignore the column and drop the mark on their next save.
   report that a relic stone broke counts only from a player near it, a report that one was raised
   only from the player the server asked to raise it, and the breaker is blamed only when they are
   near the stone.
-- **Installing brings FireFront 1.0.2** (was 1.0.0), the first FireFront that reports who lit each
-  fire. An older FireFront now names itself at boot, with what it still does and what needs the
-  update.
+- **A mod manager now installs FireFront 1.0.2 with it** (was 1.0.0). It is the first FireFront
+  that reports who lit each fire. Installing by hand, an older FireFront now names itself at boot,
+  with what it still does and what needs the update.
 
 ## 0.27.5
 
