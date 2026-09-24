@@ -89,6 +89,11 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         // Reused per tick so a steady state allocates nothing.
         private readonly List<Vector3> _firePositions = new List<Vector3>(64);
         private readonly List<ZoneKey> _burningZones = new List<ZoneKey>(16);
+
+        // Arson attribution follows the igniter's own fire, not every fire on the map (review
+        // 2026-09-24): FireFront's igniter is one global, so see ArsonFootprint.
+        private readonly ArsonFootprint _arson = new ArsonFootprint();
+        private readonly List<ZoneKey> _arsonZones = new List<ZoneKey>(16);
         private readonly object[] _collectArgs = new object[1];
 
         // Storm lightning (0.23.0). The ignite surface follows the igniter's
@@ -158,7 +163,11 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             // early-out: starting a fire from nothing is its entire purpose.
             TryLightning();
 
-            if (_firePositions.Count == 0) return;
+            if (_firePositions.Count == 0)
+            {
+                _arson.Clear();   // every fire is out, so FireFront has let its igniter go too
+                return;
+            }
 
             _burningZones.Clear();
             FireScorch.CollectBurningZones(_firePositions, _burningZones);
@@ -166,13 +175,15 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             float delta = FireScorch.ScorchDelta(ModConfig.FireScorchPerMinute.Value, deltaSeconds);
             if (delta <= 0f) return;
 
-            // Task 13's arson writer: the fire event's culprit, from FireFront's optional
-            // igniter surface, booked the same scorch this tick burns into each zone. One
-            // igniter per event — spread fires inherit their arsonist by FireFront's own
-            // capture-once rule. 0 means natural fire, attributed to nobody.
+            // Task 13's arson writer: the fire's culprit, from FireFront's optional igniter
+            // surface, booked the same scorch this tick burns into each of THEIR zones. 0 means
+            // natural fire, attributed to nobody. FireFront's igniter is one global for the whole
+            // map while it runs several fire events, so only the zones the igniter's own fire has
+            // reached by contact are billed (ArsonFootprint); an unrelated fire elsewhere is not.
             long igniter = TryReadIgniter();
+            _arson.Observe(igniter, _burningZones, _arsonZones);
             float harmPerPoint = ModConfig.ArsonHarmPerScorchPoint.Value;
-            bool bookHarm = igniter != 0 && harmPerPoint > 0f
+            bool bookHarm = igniter != 0 && _arsonZones.Count > 0 && harmPerPoint > 0f
                             && ModConfig.EnableRivalry.Value && RivalryLedger.IsLoaded;
 
             for (int i = 0; i < _burningZones.Count; i++)
@@ -185,7 +196,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 // job, on the zone clock. This system only ever adds.
                 Persistence.Set(zone, state);
 
-                if (bookHarm)
+                if (bookHarm && _arsonZones.Contains(zone))
                     RivalryLedger.AddHarm(zone, igniter, delta * harmPerPoint);
             }
 

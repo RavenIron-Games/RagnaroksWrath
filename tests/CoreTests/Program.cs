@@ -1105,6 +1105,56 @@ namespace RagnaroksWrath.Tests
         {
             Console.WriteLine("\nFireScorch");
 
+            // Arson follows the igniter's own fire (review 2026-09-24): FireFront's igniter is one
+            // global, so an unrelated fire elsewhere must not be billed to it.
+            {
+                var arson = new ArsonFootprint();
+                var burning = new List<ZoneKey>();
+                var billed = new List<ZoneKey>();
+
+                burning.Add(new ZoneKey(0, 0));
+                arson.Observe(111L, burning, billed);
+                Check("the zones burning when an igniter appears are theirs",
+                    billed.Count == 1 && billed[0] == new ZoneKey(0, 0));
+
+                burning.Clear();
+                burning.Add(new ZoneKey(0, 0));
+                burning.Add(new ZoneKey(1, 1));     // spread, diagonal contact
+                burning.Add(new ZoneKey(20, -5));   // an unrelated fire across the map
+                arson.Observe(111L, burning, billed);
+                Check("spread by contact is billed, a separate fire is not",
+                    billed.Count == 2 && billed.Contains(new ZoneKey(1, 1))
+                    && !billed.Contains(new ZoneKey(20, -5)));
+
+                burning.Clear();
+                burning.Add(new ZoneKey(3, 1));     // listed first: only reachable through (2,1)
+                burning.Add(new ZoneKey(2, 1));
+                burning.Add(new ZoneKey(20, -5));
+                arson.Observe(111L, burning, billed);
+                Check("a front that crossed two zones in one tick is followed, even after its origin went out",
+                    billed.Count == 2 && billed.Contains(new ZoneKey(3, 1)) && billed.Contains(new ZoneKey(2, 1)));
+
+                burning.Add(new ZoneKey(21, -5));
+                arson.Observe(111L, burning, billed);
+                Check("the unrelated fire's own spread stays unbilled",
+                    !billed.Contains(new ZoneKey(20, -5)) && !billed.Contains(new ZoneKey(21, -5)));
+
+                arson.Observe(0L, burning, billed);
+                Check("a natural fire (igniter 0) bills nobody and forgets the footprint",
+                    billed.Count == 0 && arson.ZoneCount == 0 && arson.Igniter == 0);
+
+                burning.Clear();
+                burning.Add(new ZoneKey(50, 50));
+                arson.Observe(222L, burning, billed);
+                Check("a new igniter starts a new footprint where their fire is",
+                    arson.Igniter == 222L && billed.Count == 1 && billed[0] == new ZoneKey(50, 50));
+
+                arson.Clear();
+                arson.Observe(222L, burning, billed);
+                Check("after every fire went out, the same igniter's next fire is seeded fresh",
+                    billed.Count == 1 && arson.ZoneCount == 1);
+            }
+
             // Zone size is 64; positions 10m apart share a zone, 100m apart do not.
             var fires = new List<Vector3>
             {

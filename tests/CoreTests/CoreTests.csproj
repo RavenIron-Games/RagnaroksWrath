@@ -34,6 +34,7 @@
     <Compile Include="..\..\RagnaroksWrath\Config\ConfigMigration.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\WindState.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\FireScorch.cs" />
+    <Compile Include="..\..\RagnaroksWrath\Core\ArsonFootprint.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\PlagueSpread.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\BiomeMetrics.cs" />
     <Compile Include="..\..\RagnaroksWrath\Core\WorldCondition.cs" />
