@@ -1,12 +1,88 @@
 # Changelog
 
-## Unreleased
+## 0.28.0
 
-**Leaving one world and starting another in the same game session no longer carries the first
-world's state into the second.** The rest of this entry comes from a code review of 0.27.5. No
-config keys change. One save file gains an optional column: the titles file marks a player who has
-earned Winterborn this winter with a `W`, so the award stays once per winter across a restart. Older
-builds ignore the column and drop the mark on their next save.
+**The config is two readable files now, with every value kept. Storm lightning checks for rain where
+it would strike. And a code review of 0.27.5 fixed a world's state leaking into the next one you
+load, storms ending raids, and titles swapping back and forth.** Nothing needs doing to upgrade: the
+first start moves your settings and says so in the log.
+
+### Two config files, every value kept
+
+The single `com.raveniron.ragnarokswrath.cfg` had grown to 148 settings in 18 sections, numbered in
+the order they were added. It is now two files:
+
+- **`com.raveniron.ragnarokswrath.cfg`** holds 42 settings: every gameplay system's on/off switch and
+  the few settings most servers change, such as storm timing and look, storm lightning, how often
+  outbreaks start, the nemesis, announcements and the visual effects.
+- **`com.raveniron.ragnarokswrath.advanced.cfg`** holds the other 104: rates, thresholds, intervals
+  and lists.
+- **Both files use the same 15 sections, `01 - General` to `15 - Visuals`**, one per system, so a
+  setting sits under the same heading as its switch.
+- **Every description is rewritten** in plain terms: what the setting does, in what unit, and, for
+  the ones each player's own game reads, that it does.
+- **[docs/CONFIG.md](docs/CONFIG.md) is a guide to all of them**, section by section, and marks the
+  gameplay settings each player's own game reads: sickness and chill, the exposure tiers, tired soil and the crop list, every land consequence
+  with its thresholds and the wildlife list, grudges and spawn wars, the nemesis, and relic stones. Give every player the
+  server's values for those. The visual effects are each player's own choice.
+- **Two settings are removed, because neither ever did anything.** `StormFireRiskMultiplier` and
+  `StormWindMultiplier` only ever fed a log line.
+- **The wind settings moved into `03 - Weather`** in the advanced file. The mod reads the wind, but
+  since the two retired settings went, nothing uses it.
+
+**Upgrading.** The first start of 0.28.0 moves every setting to its new place with its value. It
+keeps the old file beside the new ones as `com.raveniron.ragnarokswrath.cfg.v1.bak` (`.v0.bak` if
+it was last written by a version before 0.27.2, the first to stamp its layout), and logs one line
+naming what moved and what was removed. `wrath status` shows
+the layout version the files are at. **Going back to an older version? Restore that backup first.**
+An older version cannot read the new layout and would start from its defaults.
+
+**An interrupted move is safe.** If a file is locked or the disk fills, the mod leaves your files as
+they were and moves them on the next start:
+
+- A save that fails part-way puts the file back exactly as it was, because BepInEx empties a config
+  file before writing it.
+- The main file is written only after the advanced one has saved, so no setting is ever lost
+  between the two.
+- If a setting turns up in both its old and its new place with different values (left behind by an
+  interrupted earlier start and edited since), the new place's value is kept, unless it is only the
+  shipped default. The log names both values either way.
+- If the mod cannot read the file at all, it writes nothing to either file and says, in the log and
+  in `wrath status`, that settings may be at their defaults until the next start.
+
+**Verified on a dedicated server (Valheim 1.0.15).**
+
+- A server config in the 0.27.x layout, with custom values, moved on the first start with all 146
+  of its values unchanged: 145 settings moved to new places, and one (`AnnounceTitles`) was
+  already in its place, since its section kept its name. A second start changed nothing.
+- A player's own config, last written by 0.27.5, moved the same way when they launched the game
+  on 0.28.0.
+- An interrupted move, rebuilt by hand under real BepInEx: a value edited in the new place was kept
+  with a warning, and a default left there gave way to the old value.
+
+### Storm lightning checks for rain where it would strike
+
+**On a dedicated server, storm lightning struck in the rain.** That was the default setup, with
+`StormsForceWeather` off. The game only works out the weather for a machine that has a camera, so a
+dedicated server's own weather reading never changes from the value it started with, and the rain
+check read that. The README promised "never in rain".
+
+- **Each bolt now asks FireFront whether it is raining where the bolt would land.** FireFront works
+  out the weather for any position the same way the game does for a player standing there. If it
+  rains there, or FireFront cannot say, the bolt does not fall.
+- **This needs FireFront 0.21.0 or later** when no storm sky is forced. With an older FireFront the
+  log warns at startup, and no bolt falls unless `StormsForceWeather` is on.
+- **With `StormsForceWeather` on, nothing changes.** The storm's own sky decides, as it has since
+  0.27.2.
+- **Verified on a dedicated server (Valheim 1.0.15, FireFront 1.0.2).** With the server's weather
+  forced to rain, all three bolts a storm rolled were withheld, each logged as "FireFront reads rain
+  there". Forced clear, the next bolt struck about 30 m from the player and started a ground fire.
+
+### From a code review of 0.27.5
+
+One save file gains an optional column: the titles file marks a player who has earned Winterborn
+this winter with a `W`, so the award stays once per winter across a restart. Older builds ignore the
+column and drop the mark on their next save.
 
 - **Each world keeps its own state.** Going back to the main menu and then starting or hosting
   another world kept the first world's zone drift, titles, grudges, sickness and relic stones in

@@ -2803,7 +2803,7 @@ namespace RagnaroksWrath.Tests
                 !LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, rainingWhereItLands: true) &&
                  LightningStrike.SkyAllows(forcedSky: false, stormIsDry: false, rainingWhereItLands: false));
 
-            // An answer that cannot be had is not a dry sky. A FireFront older than 0.20.3 has
+            // An answer that cannot be had is not a dry sky. A FireFront older than 0.21.0 has
             // no rain read and a reflected call can throw; either way the bolt is withheld,
             // never risked, which is the homestead standoff's fail-closed rule. A gate written
             // as `rainingWhereItLands != true` passes every case above and fails this one.

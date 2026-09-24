@@ -16,7 +16,7 @@ build UI.
 .\tools\fetch-libs.ps1     # once per machine: copies game/BepInEx DLLs into libs\
 .\tools\run-tests.ps1      # off-game logic tests (net10) — run before every commit
 # After ANY Valheim update, before shipping: does the game still have what we reach for?
-# Covers ALL SIX mods since 2026-09-11 (104 surfaces since 2026-09-24), not just this one and FireFront.
+# Covers ALL SIX mods since 2026-09-11 (110 surfaces since 2026-09-24), not just this one and FireFront.
 dotnet build tools\apiprobe\Probe.csproj -v q --nologo
 .\tools\apiprobe\bin\Debug\net10.0\Probe.exe "<Valheim>\valheim_Data\Managed"
 # And the other half of that question, which apiprobe CANNOT answer: does the binary we ALREADY
@@ -65,7 +65,9 @@ Valheim's own `isModded:` line flips to `True`.
 
 ```
 RagnaroksWrath/            server plugin (net472) — all simulation
-  Config/ModConfig.cs      config surface; every system has an on/off toggle
+  Config/ModConfig.cs      config surface; every system has an on/off toggle. TWO files since
+                           0.28.0 (main + .advanced.cfg); ConfigLedger plans moves between
+                           layouts, ConfigMigration applies them. docs/CONFIG.md is the guide
   Core/                    WorldTick, ZoneClock, ZoneKey, ZoneState, Persistence, IWorldSystem
   Feedback/MessageFeed.cs  the ONLY player-facing output channel
   Systems/World/           the simulation systems
@@ -215,16 +217,21 @@ loads a site for ~180s then unloads it.
   player-built pieces, behind a config toggle.
 
 **FireFront (Raven Iron)** — our own structure-fire mod; the fire simulation this mod's
-FireSystem bridges to instead of competing with. FOUR reflected surfaces, all documented in
+FireSystem bridges to instead of competing with. FIVE reflected surfaces, all documented in
 FireFront's source as load-bearing cross-mod contracts: the read API
 (`FireManager.CollectActiveFirePositions(List<Vector3>)`, 0.17.2+ — renaming it silently
 disarms Scorch here, and FireSystem warns every tick when it cannot resolve), the igniter
 property (`CurrentFireIgniterPlayerId`, 0.17.3+ — arson attribution; optional, absence logs
 once), the per-fire igniters (`CollectActiveFiresWithIgniters(List<Vector3>, List<long>)`,
 1.0.2+ — per-fire arson blame; optional, older FireFront falls back to the single igniter blamed
-only where its fire spread, and a 1.0.2+ FireFront without it warns that the API moved), and the
+only where its fire spread, and a 1.0.2+ FireFront without it warns that the API moved), the
 write (`IgniteGroundNear(Vector3, float)`, promoted 2026-08-27 — storm lightning's spark;
-optional, absence logs once). apiprobe cannot see these: it loads only the Valheim assemblies. Since 0.23.0 FireFront is also a listed
+optional, absence logs once), and the rain read (`FireFront.Utils.ValheimBridge.IsRainingAt(Vector3)`,
+public static since 0.21.0, used by storm lightning since 0.28.0 whenever no storm sky is forced; it
+FAILS CLOSED — a missing surface warns once and a thrown call warns, and either withholds the bolt;
+a FireFront older than 0.21.0 is named at boot). apiprobe cannot see these: it loads only the
+Valheim assemblies. It does probe the six `EnvMan` members `IsRainingAt` itself reaches into, since
+those move with Valheim, not with FireFront. Since 0.23.0 FireFront is also a listed
 manifest dependency — packaging only; the code stays soft.
 
 **SkyNet Redux** patches `EnvMan`
@@ -260,7 +267,9 @@ overlap if it is ever installed alongside.
   upload — and does NOT do that for any other dependency, which is why this one stayed wrong.
   (README's "FireFront 0.18.0+ for storm lightning" is conservative, not proven necessary: the
   0.17.3 build in FireFront's `dist\` already has a public `IgniteGroundNear`. 0.18.0 was chosen as
-  the earliest version FireFront's git history can show; nothing older is on the store.)
+  the earliest version FireFront's git history can show; nothing older is on the store. Since 0.28.0
+  the README adds "0.21.0+ unless the storm sky is forced", which IS necessary: that is the first
+  FireFront with a public `IsRainingAt`, and without it no unforced bolt falls.)
 
 - **BepInEx's `ConfigDefinition` is ORDINAL AND CASE-SENSITIVE**, and the config migration was
   written on the opposite assumption until 2026-09-18. `Equals` is
@@ -295,7 +304,7 @@ overlap if it is ever installed alongside.
 - **`ConfigFile.OrphanedEntries` is PRIVATE and BepInEx writes every orphan back out on each `Save`.**
   A key you simply stop binding rides along in the file forever. Dropping one is `Bind` under a
   throwaway default then `Remove`, both public. Never name the property — house rule 5's Mono JIT
-  failure applies. (No retire rung exists here yet; FireFront and Undertow both carry the code.)
+  failure applies. (RW's first retire rung is 0.28.0's: `ConfigMigration.Drop`.)
 
 - **A migration's summary is written BEFORE any step runs, so a refusal has to be folded back in.**
   `LastSummary` comes from `ConfigLedger.Describe(_plan)` inside `Begin`, and `wrath status` prints
@@ -305,11 +314,58 @@ overlap if it is ever installed alongside.
   them and `Finish` appends to the summary. Found by an adversarial audit of FireFront's port of this
   same code, 2026-09-18; all three mods had it.
 
-- **RW deliberately has no retirement machinery, and that is not an oversight to correct.** FireFront
-  and Undertow gained a gate on 2026-09-18 that withholds the version stamp when a retirement's drop
-  throws, because a stamped file never migrates again and a transient file lock must not become
-  permanent. There is nothing here that can fail that way, so the gate was NOT ported. Dead machinery
-  reads as a feature that works. Add it in the same commit as the first retire rung, not before.
+- **RW has retirement machinery since 0.28.0, and it came WITH the gate, in the same change.** Two
+  settings were retired (`StormFireRiskMultiplier`, `StormWindMultiplier`), and every moved setting's
+  old line is dropped the same way. `ConfigMigration.Drop` is `Bind` under a throwaway default then
+  `Remove`, refuses any key this build still binds, and returns false when a drop throws — which
+  withholds the version stamp, because a stamped file never migrates again and a transient file lock
+  must not become permanent. That is the gate FireFront and Undertow gained on 2026-09-18. Until
+  0.28.0 there was nothing here that could fail that way, which is why it was not ported earlier.
+
+- **BepInEx's `ConfigFile.Save` is not atomic: it EMPTIES the file before writing.** It opens with
+  `new StreamWriter(ConfigFilePath, append: false, ...)` (read out of `libs\BepInEx.dll`), so a save
+  that throws part-way — a full disk, a transient I/O error — leaves a TRUNCATED file, not the
+  untouched one a try/catch around `Save()` suggests. `ConfigMigration.TrySave` reads the bytes just
+  before saving and writes them back on failure, or deletes a file that did not exist before. The
+  harness stub's `ThrowMidSave` reproduces it; its `ThrowOnSave` (a lock, failing before any write)
+  never could, and was the only failure the first 0.28.0 tests modelled. Found by the 0.28.0 review.
+
+- **A migration split across two files has a window where a setting lives in BOTH places.** The
+  advanced file is saved first; if the main save then fails, the main file stays unstamped with its
+  old lines, while the new place is what the mod reads from then on — and may be edited, by hand or
+  through a config manager. The next boot re-plans from the old lines. Overwriting the destination
+  blindly reverted that edit silently (the review reproduced it). The planner now records what the
+  destination already held (`MovedSlot.AlreadyThere`), and `ApplyCarry` keeps the new place's value
+  unless it equals the shipped default — which is what an interrupted run leaves when it could not
+  carry anything — naming both values in the log either way. Also: when the advanced save or a drop
+  fails, the main file is not saved AT ALL (it once was, writing each main-file setting twice).
+
+- **A section name can be both an old one and a new one.** `13 - Titles` is layout 1's and layout
+  2's. The sweep that drops leftovers from emptied sections once dropped `AnnounceTitles`, which never
+  moved, and `EnableTitle` the moment it had been carried in. `ConfigLedger.Plan` never sweeps a
+  section any move of the same rung lands in, whatever `EmptiedSections` lists. Caught by the harness
+  binding ModConfig against the move table, before anything shipped.
+
+- **Since 0.28.0 renamed every section, a migration that cannot READ the file costs the boot its
+  settings.** BepInEx matches a stored line only by exact section and key, so with no plan every moved
+  setting binds at its default. `Begin` retries the read three times, 100 ms apart; if it still fails,
+  `Finish` writes NOTHING (a save would put defaults beside the old lines), and both the log and
+  `wrath status` say the session may be running on defaults until a restart. The old code said
+  "every value binds exactly as it always did", which stopped being true the day the sections moved.
+
+- **Many settings are read on each PLAYER's game, not the server's — 45 of the 146.** The health
+  switch, regen effects and exposure tiers, frost chill, the farming switch, crop list and growth
+  slowdown, the whole Consequence section and the wildlife list (`Patch_Consequence` and
+  `ConsequenceEffects` run where pickables, plants and spawns are live, which a dedicated server never
+  is), the rivalry switch, grudge-refused picking, the wild side of a spawn war, the nemesis (the
+  victim's client decides it), the relic switch, cursed-ground star bonus and stone list, and every
+  visual. A server-only config change does nothing for those. **0.28.0's first draft of the flags
+  missed twenty of them, including the whole Consequence section, which the README of 0.27.x had
+  named correctly**; the docs check caught it by grepping every `ModConfig.<Name>.Value` read site and
+  tracing its gate. Do that, not a recollection, whenever the list is touched. `docs/CONFIG.md` marks each one; it is generated by
+  `tools/config-guide/gen-config-md.js` from the two files a real boot wrote, plus the guide texts and
+  client-read flags in `tools/config-guide/guides.json` — regenerate it whenever a setting is added,
+  moved or re-described, and re-check the flags against the code when a setting changes where it is read.
 
 - **BepInEx orders config sections by NAME when it writes the file**, so the `Meta` section lands at
   the BOTTOM, not the top. A comment in `ModConfig` asserted the opposite and was wrong; corrected,
@@ -424,6 +480,27 @@ overlap if it is ever installed alongside.
 ---
 
 ## Current state
+
+**Built and VERIFIED IN-GAME (2026-09-24, 0.28.0, dedicated server Storm10 on Valheim 1.0.15 with
+FireFront 1.0.2): storm lightning checks the rain where it would land, and the config is two files.**
+0.28.0 is the rain fix and the config layout (worked on as "0.27.6", never released under that
+number) stacked on PR #9 (`fix/review-2026-09-24`, a separate session's review fixes), so one test
+covered the combined build. **Rain**, `StormsForceWeather` off: `fireweather force Rain` — FireFront's
+own admin command, which sets the server's `EnvMan.m_debugEnv`, the first override vanilla's resolver
+checks and one `IsRainingAt` replays — gave 3 of 3 bolts `withheld ... FireFront reads rain there`;
+`force Clear` let the next bolt strike (FireFront then showed 5 ground fires); after `reset`, natural
+weather let five bolts strike under a clear sky. Note the forced debug environment also moves the server's
+own `CurrentEnvironment` headless (the storm line read 'Rain'); the storm-start text now says so.
+**Layout**: Storm10's layout-1 config with custom values (its production file as 0.27.5 wrote it,
+plus the rain-test timings, last saved by the unreleased 0.27.6 test build) migrated under real
+BepInEx on Storm10 and on a copy of it (`ValheimServers\Storm28`, port 2479) with all 146 values
+unchanged by name-for-name comparison — 145 moved and `AnnounceTitles` already in place, which is
+why the boot line says 145; the production file exactly as 0.27.5 wrote it is the harness fixture
+`tests\CoreTests\fixtures\written-by-0.27.5.cfg`; the second boot was a byte-identical no-op; a player's own
+client config migrated the same way on launch; and an interrupted migration rebuilt by hand kept a
+value edited in the new place (with its warning) while a default left there lost to the old value.
+The five findings of the 0.28.0 adversarial review (the two-file traps above) are fixed, and each fix
+is pinned by a test that fails without it (proved by reverting each).
 
 **Built and VERIFIED IN-GAME (2026-09-23, 0.27.5, dedicated server Storm10 on Valheim 1.0.15): storms
 end unwatched.** Reported the same day: a storm never stopped once its zone emptied. Cause in the
@@ -545,10 +622,11 @@ default happen to agree with the roll. Caught live on Storm10 on 2026-09-18 by a
 one log line after the mod announced rain would suppress it, in both of that session's wet
 storms, while the client showed the vanilla `Wet` status. `FireSystem` now gates on
 `WeatherSystem.StormIsDry` whenever `StormsForceWeather` is on — see `LightningStrike.SkyAllows`
-— and consults `EnvMan.IsWet()` only when no sky is forced. **That fallback is honest only on a
-listen host.** On a dedicated server the same camera gate freezes it at `Awake`'s default (dry), so
-with no sky forced — the DEFAULT config — lightning ignores natural rain: an OPEN BUG, see Known open
-bugs below. A listen host was never affected by the forced-sky bug either: it has a local player, so the override resolves and old and new
+— and until 0.28.0 consulted `EnvMan.IsWet()` when no sky was forced. **That fallback was honest
+only on a listen host.** On a dedicated server the same camera gate froze it at `Awake`'s default
+(dry), so with no sky forced — the DEFAULT config — lightning ignored natural rain. Fixed in 0.28.0:
+each unforced bolt asks FireFront's `IsRainingAt` about the spot it would land, and never reads
+`EnvMan.IsWet()` at all (verified in-game 2026-09-24, see the top of Current state). A listen host was never affected by the forced-sky bug either: it has a local player, so the override resolves and old and new
 agree. **FireFront was never affected either** — it already reads the authoritative
 `RandEventSystem.GetCurrentRandomEvent()`; an early reading of its `raining 0/0` heartbeat as a
 shared bug was wrong, that ratio is `wet/burning` and simply meant nothing was alight.
@@ -559,7 +637,7 @@ established world, not the `Spring` enum default — a brand-new world legitimat
 at day 0, so read that line together with `resolved EnvMan.GetCurrentDay accessor` above it).
 `Persistence` is covered by the paragraph below.
 
-**Built and unit-tested (117/117):** `ZoneKey`, `ZoneClock` (credit-on-contact drift timing),
+**Built and unit-tested (477/477 at 0.28.0; this line started at 117):** `ZoneKey`, `ZoneClock` (credit-on-contact drift timing),
 `ZoneState`, `Persistence` (world-scoped, atomic, fail-safe), `ModConfig`, `MessageFeed`.
 
 **Verified in-game, both paths:** `Persistence`, verified 2026-08-25 at v0.1.6
@@ -569,12 +647,9 @@ no client run can establish. Store written, file on disk, read back with values 
 rotated, no `.tmp` orphaned. The two worlds produced two separate stores in the same directory,
 so world-scoping is now demonstrated rather than only unit-tested.
 
-**Known open bugs:** one, found 2026-09-23. **With `StormsForceWeather` off (the default), a dedicated
-server's storm lightning ignores natural rain**, because `EnvMan.IsWet()` never leaves `Awake`'s
-default headless (`UpdateEnvironment` returns early with no camera; decompiled from 1.0.15). The README
-promises "never in rain". The likely fix is to ask FireFront's public
-`FireFront.Utils.ValheimBridge.IsRainingAt(Vector3)`, which replays vanilla's weather roll for a
-position; details in docs/HANDOFF.md. Not fixed: the design is the owner's call.
+**Known open bugs:** none. The one found 2026-09-23 — with `StormsForceWeather` off, a dedicated
+server's storm lightning ignored natural rain — is fixed in 0.28.0 and verified in-game; see the top
+of Current state.
 
 The wholly-corrupt-file case was fixed 2026-08-25. `File.ReadAllLines`
 does not throw on binary garbage — it returns junk strings that each fail per-line parsing — so

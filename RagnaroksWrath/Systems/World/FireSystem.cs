@@ -72,9 +72,9 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         // like a scorch bug here, not a stale dependency there.
         private static readonly System.Version GameOneZeroFireFrontVersion = new System.Version(0, 20, 0);
 
-        // FireFront's rain read (`ValheimBridge.IsRainingAt`) landed in 0.20.3. Lightning under
+        // FireFront's rain read (`ValheimBridge.IsRainingAt`) landed in 0.21.0. Lightning under
         // the world's own sky asks it before every bolt and withholds the bolt without it.
-        private static readonly System.Version RainFireFrontVersion = new System.Version(0, 20, 3);
+        private static readonly System.Version RainFireFrontVersion = new System.Version(0, 21, 0);
 
         public string Name => "FireSystem";
         public bool Enabled => ModConfig.EnableFire.Value;
@@ -410,7 +410,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
         /// <summary>
         /// Whether rain falls at this position, from FireFront's static
-        /// `ValheimBridge.IsRainingAt(Vector3)` (0.20.3+), or null when that cannot be known,
+        /// `ValheimBridge.IsRainingAt(Vector3)` (0.21.0+), or null when that cannot be known,
         /// which withholds the bolt. FireFront replays vanilla's per-period, per-biome weather
         /// roll for the position, after the overrides vanilla applies first, because headless
         /// `EnvMan` never rolls at all; it puts its own fires out by the same answer, so a bolt
@@ -437,7 +437,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                         {
                             _rainAbsenceLogged = true;
                             RagnaroksWrath.Log.LogWarning(
-                                $"[{Name}] FireFront has no ValheimBridge.IsRainingAt surface (0.20.3+) — " +
+                                $"[{Name}] FireFront has no ValheimBridge.IsRainingAt surface (0.21.0+) — " +
                                 "with no storm sky forced, no bolt can be checked for rain, so none will " +
                                 "fall. Scorch is unaffected. Update FireFront.");
                         }

@@ -587,7 +587,8 @@ namespace RavenIron.RagnaroksWrath.Config
 
                 EnableFarming = cfg.Bind(FarmingSection, "EnableFarming", true,
                     "Turns crop soil fatigue on or off. Heavily planted zones tire out and grow crops more " +
-                    "slowly until the land is given a rest.");
+                    "slowly until the land is given a rest. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 // ---- 08 - Farming, advanced file ----
 
@@ -614,13 +615,15 @@ namespace RavenIron.RagnaroksWrath.Config
 
                 FarmingCropPrefabs = advanced.Bind(FarmingSection, "FarmingCropPrefabs", "sapling_carrot,sapling_turnip,sapling_onion,sapling_barley,sapling_flax,sapling_seedcarrot,sapling_seedturnip,sapling_seedonion,sapling_jotunpuffs,sapling_magecap",
                     "Comma-separated list of crop names counted as farmland. Only these are checked for " +
-                    "soil depletion and slower growth on tired soil; anything not listed is unaffected.");
+                    "soil depletion and slower growth on tired soil; anything not listed is unaffected. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 // ==== 09 - Health =====================================================================
 
                 EnableHealth = cfg.Bind(HealthSection, "EnableHealth", true,
                     "Turns plague sickness and frost chill on or off. Standing on tainted or bitterly cold " +
-                    "ground weakens stamina and health regen until the player leaves or recovers.");
+                    "ground weakens stamina and health regen until the player leaves or recovers. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 FrostChillEnabled = cfg.Bind(HealthSection, "FrostChillEnabled", true,
                     "Turns frost chill on or off: high zone frost slows stamina and health regen where " +
@@ -674,7 +677,8 @@ namespace RavenIron.RagnaroksWrath.Config
                 ExposureTier3 = advanced.Bind(HealthSection, "ExposureTier3", 0.8f,
                     new ConfigDescription(
                         "Exposure level at which the sickness is announced as being at its worst. Only changes " +
-                        "that announcement — the regen penalties already ramp smoothly past this point.",
+                        "that announcement — the regen penalties already ramp smoothly past this point. " +
+                        "Set the same value on every player's game.",
                         new AcceptableValueRange<float>(0.01f, 1f)));
 
                 SicknessStaminaRegenAtTier1 = advanced.Bind(HealthSection, "SicknessStaminaRegenAtTier1", 0.85f,
@@ -723,23 +727,28 @@ namespace RavenIron.RagnaroksWrath.Config
 
                 EnableConsequence = cfg.Bind(ConsequenceSection, "EnableConsequence", true,
                     "Turns land consequences on or off: barren pickables, tougher spawns, sickened wildlife " +
-                    "and dying crops on badly plagued, scorched or corrupted ground.");
+                    "and dying crops on badly plagued, scorched or corrupted ground. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 ConsequenceBarren = cfg.Bind(ConsequenceSection, "ConsequenceBarren", true,
                     "Stops berries, mushrooms and other pickables from being harvested on badly plagued or " +
-                    "scorched ground, with an in-world message explaining why.");
+                    "scorched ground, with an in-world message explaining why. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 ConsequenceEmpower = cfg.Bind(ConsequenceSection, "ConsequenceEmpower", true,
                     "Gives hostile creatures a better chance of spawning as a stronger, starred variant on " +
-                    "badly corrupted ground. Passive wildlife is never affected.");
+                    "badly corrupted ground. Passive wildlife is never affected. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 ConsequenceSicken = cfg.Bind(ConsequenceSection, "ConsequenceSicken", true,
                     "Slows and sickens passive wildlife (deer, boars, hares) standing on plagued ground. " +
-                    "The effect wears off once the animal leaves or the plague clears.");
+                    "The effect wears off once the animal leaves or the plague clears. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 ConsequenceWither = cfg.Bind(ConsequenceSection, "ConsequenceWither", true,
                     "Kills crops planted in badly blighted soil once they would otherwise finish growing. " +
-                    "Replanting after the land recovers is the fix.");
+                    "Replanting after the land recovers is the fix. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 AnnounceConsequences = cfg.Bind(ConsequenceSection, "AnnounceConsequences", true,
                     "Shows a one-line message the first time a player enters a zone with barren ground, " +
@@ -756,54 +765,63 @@ namespace RavenIron.RagnaroksWrath.Config
 
                 BarrenPlagueThreshold = advanced.Bind(ConsequenceSection, "BarrenPlagueThreshold", 0.4f,
                     new ConfigDescription(
-                        "Plague level in a zone at or above which pickables there stop yielding anything.",
+                        "Plague level in a zone at or above which pickables there stop yielding anything. " +
+                        "Read on each player's own game, so give every player the same value.",
                         new AcceptableValueRange<float>(0.05f, 1f)));
 
                 BarrenScorchThreshold = advanced.Bind(ConsequenceSection, "BarrenScorchThreshold", 0.5f,
                     new ConfigDescription(
                         "Scorch level in a zone at or above which pickables there stop yielding anything — ash " +
-                        "bears nothing.",
+                        "bears nothing. " +
+                        "Read on each player's own game, so give every player the same value.",
                         new AcceptableValueRange<float>(0.05f, 1f)));
 
                 SickenPlagueThreshold = advanced.Bind(ConsequenceSection, "SickenPlagueThreshold", 0.4f,
                     new ConfigDescription(
-                        "Plague level in a zone at or above which passive wildlife there starts to sicken.",
+                        "Plague level in a zone at or above which passive wildlife there starts to sicken. " +
+                        "Read on each player's own game, so give every player the same value.",
                         new AcceptableValueRange<float>(0.05f, 1f)));
 
                 SickenSpeedPenalty = advanced.Bind(ConsequenceSection, "SickenSpeedPenalty", 0.35f,
                     new ConfigDescription(
                         "How much slower sickened wildlife moves, as a fraction of its normal speed — for " +
-                        "example, 0.5 means half speed. This only slows animals; it never kills them.",
+                        "example, 0.5 means half speed. This only slows animals; it never kills them. " +
+                        "Read on each player's own game, so give every player the same value.",
                         new AcceptableValueRange<float>(0f, 0.9f)));
 
                 EmpowerCorruptionThreshold = advanced.Bind(ConsequenceSection, "EmpowerCorruptionThreshold", 0.5f,
                     new ConfigDescription(
                         "Corruption level in a zone above which hostile spawns start getting better odds of " +
-                        "coming up stronger.",
+                        "coming up stronger. " +
+                        "Read on each player's own game, so give every player the same value.",
                         new AcceptableValueRange<float>(0.05f, 1f)));
 
                 EmpowerLevelUpMultiplierAtFull = advanced.Bind(ConsequenceSection, "EmpowerLevelUpMultiplierAtFull", 6f,
                     new ConfigDescription(
                         "How much better the odds of a stronger spawn get on fully corrupted ground, as a " +
-                        "multiplier on the game's own level-up chance.",
+                        "multiplier on the game's own level-up chance. " +
+                        "Read on each player's own game, so give every player the same value.",
                         new AcceptableValueRange<float>(1f, 10f)));
 
                 CropWitherBlightThreshold = advanced.Bind(ConsequenceSection, "CropWitherBlightThreshold", 0.6f,
                     new ConfigDescription(
                         "Blight level (whichever is worse, plague or corruption) at which planted crops wither " +
-                        "and die outright.",
+                        "and die outright. " +
+                        "Read on each player's own game, so give every player the same value.",
                         new AcceptableValueRange<float>(0.05f, 1f)));
 
                 WildlifePrefabs = advanced.Bind(ConsequenceSection, "WildlifePrefabs", "Deer,Boar,Hare",
                     "Comma-separated list of creature names counted as passive wildlife — these can sicken " +
-                    "from plague but are never turned into a stronger spawn by corruption.");
+                    "from plague but are never turned into a stronger spawn by corruption. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 // ==== 11 - Rivalry ====================================================================
 
                 EnableRivalry = cfg.Bind(RivalrySection, "EnableRivalry", true,
                     "Turns the rivalry system on or off. It tracks who helps or harms each area, feeding " +
                     "grudges, contested ground, and titles that reward or shame players for how they treat " +
-                    "the land.");
+                    "the land. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 AnnounceContests = cfg.Bind(RivalrySection, "AnnounceContests", true,
                     "Announce contest outcomes to nearby players: an area changing hands between two " +
@@ -955,7 +973,8 @@ namespace RavenIron.RagnaroksWrath.Config
                 EnableRelic = cfg.Bind(RelicSection, "EnableRelic", true,
                     "Turns relic stones on or off. Zones where a fire fully heals, a plague is cured, or a " +
                     "spawn war resolves can raise a lasting blessed or cursed landmark that changes how " +
-                    "fast the land heals and how tough creatures nearby become.");
+                    "fast the land heals and how tough creatures nearby become. " +
+                    "Read on each player's own game, so give every player the same value.");
 
                 // ---- 12 - Relic, advanced file ----
 
@@ -1004,7 +1023,8 @@ namespace RavenIron.RagnaroksWrath.Config
                 RelicCursedStarBonus = advanced.Bind(RelicSection, "RelicCursedStarBonus", 0.25f,
                     new ConfigDescription(
                         "Extra chance for hostile spawns to come up starred while standing on cursed ground, " +
-                        "stacking with the corruption bonus and any active spawn war.",
+                        "stacking with the corruption bonus and any active spawn war. " +
+                        "Read on each player's own game, so give every player the same value.",
                         new AcceptableValueRange<float>(0f, 2f)));
 
                 RelicVandalHarm = advanced.Bind(RelicSection, "RelicVandalHarm", 0.5f,
