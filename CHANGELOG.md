@@ -4,7 +4,9 @@
 
 **Leaving one world and starting another in the same game session no longer carries the first
 world's state into the second.** The rest of this entry comes from a code review of 0.27.5. No
-config keys and no save formats change.
+config keys change. One save file gains an optional column: the titles file marks a player who has
+earned Winterborn this winter with a `W`, so the award stays once per winter across a restart. Older
+builds ignore the column and drop the mark on their next save.
 
 - **Each world keeps its own state.** Going back to the main menu and then starting or hosting
   another world kept the first world's zone drift, titles, grudges, sickness and relic stones in
@@ -48,6 +50,9 @@ config keys and no save formats change.
   report that a relic stone broke counts only from a player near it, a report that one was raised
   only from the player the server asked to raise it, and the breaker is blamed only when they are
   near the stone.
+- **Installing brings FireFront 1.0.2** (was 1.0.0), the first FireFront that reports who lit each
+  fire. An older FireFront now names itself at boot, with what it still does and what needs the
+  update.
 
 ## 0.27.5
 

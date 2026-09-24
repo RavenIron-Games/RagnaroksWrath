@@ -47,21 +47,22 @@ namespace RavenIron.RagnaroksWrath.Systems.World
     /// 2026-08-27, reversing the earlier soft-by-design packaging): mod managers install the
     /// pair together, so a missing FireFront now most likely means a hand install skipped it —
     /// which is why absence warns instead of whispering. Initialise tattles the exact version
-    /// against the two API floors so a stale pairing is diagnosed at boot, not discovered as
+    /// against the API floors so a stale pairing is diagnosed at boot, not discovered as
     /// silence.
     /// </summary>
     public class FireSystem : IWorldSystem
     {
         public const string FireFrontGuid = "com.raveniron.firefront";
 
-        // The two API floors the bridge cares about: positions (scorch) landed in 0.17.2,
-        // the igniter surface (arson attribution) in 0.17.3. Compared against BepInEx's
-        // parsed plugin metadata at boot so a stale pairing names itself before the
-        // per-tick resolver's warnings become the only clue. Fully qualified because
-        // Valheim ships its own global-namespace `Version` class, which shadows
+        // The API floors the bridge cares about: positions (scorch) landed in 0.17.2,
+        // the igniter surface (arson attribution) in 0.17.3, and per-fire igniters in 1.0.2.
+        // Compared against BepInEx's parsed plugin metadata at boot so a stale pairing names
+        // itself before the per-tick resolver's warnings become the only clue. Fully qualified
+        // because Valheim ships its own global-namespace `Version` class, which shadows
         // System.Version in every file that references game types.
         private static readonly System.Version MinimumFireFrontVersion = new System.Version(0, 17, 2);
         private static readonly System.Version IgniterFireFrontVersion = new System.Version(0, 17, 3);
+        private static readonly System.Version PerFireIgniterFireFrontVersion = new System.Version(1, 0, 2);
 
         // Valheim 1.0.7 broke FireFront below 0.20.0 outright: it calls the deleted
         // World.GetWorldSavePath, so its fire store cannot resolve a path. Worth its own line
@@ -145,6 +146,11 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 RagnaroksWrath.Log.LogInfo(
                     $"[{Name}] FireFront {version} predates {IgniterFireFrontVersion} — arson " +
                     "attribution stays dormant; scorch is unaffected.");
+            else if (version < PerFireIgniterFireFrontVersion)
+                RagnaroksWrath.Log.LogInfo(
+                    $"[{Name}] FireFront {version} predates {PerFireIgniterFireFrontVersion} — it names " +
+                    "one igniter for the whole map, so arson is blamed on that player only where their " +
+                    "fire has spread. Update FireFront to blame each fire on whoever lit it.");
 
             if (version < GameOneZeroFireFrontVersion)
                 RagnaroksWrath.Log.LogWarning(

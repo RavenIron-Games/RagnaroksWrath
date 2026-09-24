@@ -83,6 +83,18 @@ class Probe
         M("ZDOMan", "FindSectorObjects", AnyInstance, "Vector2s", "SimulationDistance", "List<ZDO>", "List<ZDO>");
         M("EnvMan", "GetCurrentDay", AnyInstance);   // rule 5: private, reached by AccessTools
         F("ZDOVars", "s_creator", AnyStatic);
+        // Review fixes, 2026-09-24: the storm's wait for a running event, the sender checks on
+        // relic and zone messages (SenderGuard, RelicSync), and the world-close reset.
+        M("RandEventSystem", "GetCurrentRandomEvent", AnyInstance);
+        M("RandEventSystem", "HaveEvent", AnyInstance, "System.String");
+        M("ZNet", "GetServerPeer", AnyInstance);
+        M("ZNet", "GetPeer", AnyInstance, "System.Int64");
+        F("ZNetPeer", "m_rpc", AnyInstance);
+        M("ZPackage", "GetPos", AnyInstance);
+        M("ZPackage", "SetPos", AnyInstance, "System.Int32");
+        M("ZPackage", "ReadZDOID", AnyInstance);
+        Any("ZNet", "OnDestroy");                    // Harmony target, private, patched by name
+        Any("ZRoutedRpc", "RPC_RoutedRPC");          // Harmony target, private, patched by name
 
         // The four mods below were outside this probe until 2026-09-11. That gap was the whole
         // reason the 1.0.7 port needed a 32-agent sweep to find what a tool should have found.
