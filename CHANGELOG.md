@@ -70,19 +70,21 @@ later storm, and kept counting against the whole world's condition.
   position and takes everything else from the running build, so the first boot on 0.27.5 resumes a
   frozen storm and it runs out the time it had left. No migration, and nobody has to go and find it.
 - **Verified on a dedicated server (Valheim 1.0.15) in three steps, each a control for the next:**
-  - On 0.27.4, a player walked out of a 180-second storm and stayed online. Five minutes after it
-    began, it had not ended.
+  - On 0.27.4, a player walked out of a 180-second storm and stayed online, far from it. Five
+    minutes after it began, it had not ended; the player then logged off, and it still had not
+    ended when the server was stopped.
   - That frozen storm was saved, and the server booted on 0.27.5 with nobody online. It came back
     from the save and ended within two and a half minutes.
-  - On 0.27.5, a player walked out of a new 180-second storm and stayed online. It ended 181 seconds
-    after it began.
+  - On 0.27.5, a player walked out of a new 180-second storm and stayed online, far from it. It
+    ended 181 seconds after it began.
 - **A storm's start is now reported the moment it starts,** not on the next weather tick. Now that a
   storm runs out unwatched, the shortest allowed storm (30 s) could otherwise begin and end between two
   ticks of the slowest allowed weather interval (60 s), and never be logged, announced as passed, or
   seen by anything that reacts to storms.
 - **`StormDurationSeconds` is now time from the start, in game seconds.** Its description said vanilla
   paused it while nobody was near. Only a single-player pause stops it now, as it stops every clock
-  in the game. The key and its default are unchanged, so no config file changes.
+  in the game. The key and its default are unchanged, so no configured value changes; the first boot
+  only rewrites that setting's description in the config file.
 
 ## 0.27.4
 
@@ -139,8 +141,8 @@ player twice reached `NemesisMaxLevel` 3 and became close to unbeatable.
   the nest and bone-pile path, already gated on `m_maxLevel < 2`, and boss altars never go through
   it. Checked rather than assumed, because fixing one of two identical hazards is how this returns.
 - **Verified in-game on a dedicated server before release.** Eikthyr killed the same player twice
-  and stayed at level 1 while his boss health bar read `slayer of TestNomad x2`; a greydwarf killed
-  them twice and climbed 1 → 2 → 3, stopping at the cap. The greydwarf is the half that matters —
+  and stayed at level 1 while his boss health bar carried the slayer mark with its count of two; a
+  greydwarf killed them twice and climbed 1 → 2 → 3, stopping at the cap. The greydwarf is the half that matters —
   a guard that suppressed every level-up would make the boss row look identical.
 
 **Also in this release: the DLL no longer carries the build machine's folders.** Every build
