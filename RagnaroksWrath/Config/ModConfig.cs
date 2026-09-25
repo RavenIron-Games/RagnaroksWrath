@@ -198,7 +198,6 @@ namespace RavenIron.RagnaroksWrath.Config
         public static ConfigEntry<float> StormContestMultiplier;
         public static ConfigEntry<float> ContestStarBonus;
         public static ConfigEntry<float> ContestWildSpawnChance;
-        public static ConfigEntry<int>   ContestWildMaxSpawned;
         public static ConfigEntry<bool>  EnableNemesis;
         public static ConfigEntry<int>   NemesisMaxLevel;
 
@@ -958,15 +957,11 @@ namespace RavenIron.RagnaroksWrath.Config
 
                 ContestWildSpawnChance = advanced.Bind(RivalrySection, "ContestWildSpawnChance", 100f,
                     new ConfigDescription(
-                        "How likely nearby wildlife is to spawn while a player stands on contested ground, as a " +
-                        "percentage. Applied from that player's own game, not the server's.",
+                        "Spawn chance, as a percentage, for the wildlife list in a contested zone: the wild " +
+                        "answering the war. Never lowers the game's own chance, and never raises the game's " +
+                        "own cap on how many can stand there. 0 turns the answer off. Applied from the game of " +
+                        "the player standing there, not the server's.",
                         new AcceptableValueRange<float>(0f, 100f)));
-
-                ContestWildMaxSpawned = advanced.Bind(RivalrySection, "ContestWildMaxSpawned", 15,
-                    new ConfigDescription(
-                        "Cap on concurrent animals of each wildlife type while a spawn war is underway, applied " +
-                        "from each player's own game, not the server's.",
-                        new AcceptableValueRange<int>(1, 20)));
 
                 // ==== 12 - Relic ======================================================================
 

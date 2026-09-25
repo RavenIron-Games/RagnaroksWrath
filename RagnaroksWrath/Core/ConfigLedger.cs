@@ -46,7 +46,8 @@ namespace RavenIron.RagnaroksWrath.Core
     ///   1 = the two-sky storm (0.27.1).
     ///   2 = the two-file layout (0.28.0): sections renumbered so they sort in order, each system's
     ///       on/off switch in its own section, tuning moved to the advanced file, and the two
-    ///       storm settings that never did anything retired. Current.
+    ///       storm settings that never did anything retired.
+    ///   3 = the wild answers again (unreleased): `ContestWildMaxSpawned` retired. Current.
     ///
     /// SLOTS. A slot is "Section::Key" in the main file, and the same behind
     /// <see cref="AdvancedPrefix"/> in the advanced one. The prefix cannot collide with a real
@@ -56,7 +57,7 @@ namespace RavenIron.RagnaroksWrath.Core
     {
         public const string MetaSection = "Meta";
         public const string VersionKey = "ConfigVersion";
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
 
         /// <summary>Marks a slot as living in the advanced file rather than the main one.</summary>
         public const string AdvancedPrefix = "advanced|";
@@ -347,6 +348,13 @@ namespace RavenIron.RagnaroksWrath.Core
         /// Version 2's retirements: the two storm multipliers that were computed, printed in the
         /// storm's log line and read by nothing else, for as long as they existed. Retired rather
         /// than connected, because a dial that does nothing is worse than no dial.
+        ///
+        /// Version 3's: `ContestWildMaxSpawned`, the spawn war's pheromone instance override. It
+        /// never added an animal even when vanilla read it (the group budget used the raw cap), and
+        /// Valheim 1.0.7 stopped reading it at all. The wild side came back as a spawn-chance patch,
+        /// which leaves vanilla's cap alone by design, so nothing is left for this key to mean.
+        /// Named at its version-2 place; a file older than that has it carried there by version 2's
+        /// move and dropped from wherever it was stored.
         /// </summary>
         private static readonly Dictionary<int, Retire[]> Retirements = new Dictionary<int, Retire[]>
         {
@@ -354,6 +362,15 @@ namespace RavenIron.RagnaroksWrath.Core
                 {
                     new Retire { Slot = Slot("6 - Weather", "StormFireRiskMultiplier"), Because = "it never did anything" },
                     new Retire { Slot = Slot("6 - Weather", "StormWindMultiplier"), Because = "it never did anything" },
+                }
+            },
+            { 3, new[]
+                {
+                    new Retire
+                    {
+                        Slot = AdvancedSlot("11 - Rivalry", "ContestWildMaxSpawned"),
+                        Because = "Valheim 1.0 stopped reading it, and the wild's answer never needed it",
+                    },
                 }
             },
         };

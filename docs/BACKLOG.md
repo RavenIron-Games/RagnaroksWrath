@@ -712,6 +712,9 @@ bush, and the grudge title rendering on a nameplate.
   carries invisible TTL'd "war horn" SEs targeting the wildlife list while its player
   stands on contested ground — more deer answering, through the game's own rules, NO
   spawn patch at all. Horns silence by expiry when the war ends or the player leaves.
+  **Dead since Valheim 1.0.7 / RW 0.27.0, found 2026-09-25:** 1.0.x no longer reads the pheromone
+  spawn fields. Rebuilt as `Patch_SpawnWar` (a chance-only `UpdateSpawnList` prefix, the owner's
+  call); the horns are gone. See CLAUDE.md's first known trap.
 - **Resolution:** at the contested->uncontested edge, the wild won if the blight itself
   broke (clean ground is the wild's victory even if the tenders also faded); otherwise
   the blight won. One Centre-screen line to players near. Wire: ring push carries war
