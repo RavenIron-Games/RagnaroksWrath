@@ -506,6 +506,11 @@ every 60 s so only the chance roll decided. Deer spawns per round (deer spawned 
 - The config migration removed `ContestWildMaxSpawned` from both advanced files ON DISK under real
   BepInEx.
 - Hostile spawns: 2 / 4 / 1. There's no sign of the same-pass side effect at this size.
+- **The cap held**, in a follow-up 10-minute war round with NO culling (11:19–11:29).
+  - Deer sat at `4 of cap 4` with the chance raised to 100%, and nothing spawned.
+  - Boar went from `3 of cap 4` to one `Spawned Boar x 1`, where boar groups are otherwise up to 3.
+    The group budget trimmed it to fit. Then `4 of cap 4`, and nothing more.
+  - So the war refills toward vanilla's cap and never past it.
 
 **Unreleased, branch `feature/wild-answers`: the wild answers a spawn war again.** `Patch_SpawnWar` replaces the dead
 war horns (see the first known trap and the locked-decisions row); `ContestWildMaxSpawned` retires at
