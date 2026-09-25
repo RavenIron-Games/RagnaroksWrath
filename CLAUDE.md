@@ -490,6 +490,13 @@ overlap if it is ever installed alongside.
 
 ## Current state
 
+**0.29.0 cut 2026-09-25: the wild answers a spawn war again**, the fix below, with the BepInExPack
+pin moved to 5.4.2351 (Hexium's current) and FireFront left at 1.0.2. Its code is the tested build's;
+only the version strings changed. **0.28.0 and FireFront 1.0.2 went live on Hexium 2026-09-24**
+(23:32–23:33 UTC). Valheim 1.0.16 (2026-09-25) needed nothing: network version still 40, all 122
+apiprobe surfaces resolve on client and server, and revprobe binds the shipped RW 0.28.0 and
+FireFront 1.0.2 clean on both. The other four mods' shipped binaries were not revprobed on 1.0.16.
+
 **VERIFIED IN-GAME 2026-09-25 (Storm10 + the `testing` client, both on Valheim 1.0.16 and this build,
 md5 7b1e8d46): the wild answers.** One Meadows forest zone, (5,-5), three 15-minute rounds, culling
 every 60 s so only the chance roll decided. Deer spawns per round (deer spawned in brackets):
@@ -512,7 +519,7 @@ every 60 s so only the chance roll decided. Deer spawns per round (deer spawned 
     The group budget trimmed it to fit. Then `4 of cap 4`, and nothing more.
   - So the war refills toward vanilla's cap and never past it.
 
-**Unreleased, branch `feature/wild-answers`: the wild answers a spawn war again.** `Patch_SpawnWar` replaces the dead
+**Ships in 0.29.0 (PR #13): the wild answers a spawn war again.** `Patch_SpawnWar` replaces the dead
 war horns (see the first known trap and the locked-decisions row); `ContestWildMaxSpawned` retires at
 config version 3. An Opus review of the first cut found six things, all fixed or documented:
 - the catch-up overshoot (hence the one-attempt gate);
@@ -526,13 +533,13 @@ Vanilla's shared same-pass counter can let a war's wildlife spawn cost a later h
 interval. That one is documented in `Patch_SpawnWar`, not fixed.
 
 Harness 491/491, and each new test was proved to fail without its fix. apiprobe resolves every
-surface on 1.0.15 and 1.0.16. **In-game acceptance is an A/B on the same Meadows
-spot: no war, war, no war.** The war arm must refill deer clearly faster, counted from `Spawned Deer
+surface on 1.0.15 and 1.0.16. **In-game acceptance was an A/B on the same Meadows
+spot: no war, war, no war** (passed; results above). The war arm must refill deer clearly faster, counted from `Spawned Deer
 x N` in the CLIENT's LogOutput, because the zone owner runs the spawns. The first raise logs
 `SpawnWar: the wild answers the war in zone ...` once; under VerboseLogging a `SpawnWar: war census`
 line every minute gives each raised spawner's chance and its ZDO count against the cap. Full
-protocol: `_handoffs/RW-warhorn-pheromone-check.md` (outside the repo). `docs/CONFIG.md`'s two entries were
-edited by hand to match the new texts; regenerate it from the first boot this build writes.
+protocol: `_handoffs/RW-warhorn-pheromone-check.md` (outside the repo). `docs/CONFIG.md` was
+regenerated for 0.29.0 from the two files that build wrote on Storm10 (config version 3).
 
 **Built and VERIFIED IN-GAME (2026-09-24, 0.28.0, dedicated server Storm10 on Valheim 1.0.15 with
 FireFront 1.0.2): storm lightning checks the rain where it would land, and the config is two files.**
@@ -701,9 +708,9 @@ rotated, no `.tmp` orphaned. The two worlds produced two separate stores in the 
 so world-scoping is now demonstrated rather than only unit-tested.
 
 **Known open bugs:** one in every SHIPPED build from 0.27.0 through 0.28.0: the wild side of a
-spawn war does nothing (Valheim 1.0.7 stopped reading the pheromone fields it relied on). Fixed on
-`feature/wild-answers`, which is unreleased and awaiting its in-game test; see the top of Current
-state. The one found 2026-09-23 (with `StormsForceWeather` off, a dedicated server's storm lightning
+spawn war does nothing (Valheim 1.0.7 stopped reading the pheromone fields it relied on). Fixed in
+0.29.0 and verified in-game; it stays open for every server until 0.29.0 is on the store and
+installed. See the top of Current state. The one found 2026-09-23 (with `StormsForceWeather` off, a dedicated server's storm lightning
 ignored natural rain) is fixed in 0.28.0 and verified in-game.
 
 The wholly-corrupt-file case was fixed 2026-08-25. `File.ReadAllLines`
