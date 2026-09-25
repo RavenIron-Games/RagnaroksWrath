@@ -68,6 +68,23 @@ namespace RavenIron.RagnaroksWrath.Core
             return 1f + (full - 1f) * t;
         }
 
+        /// <summary>
+        /// Task 13 phase D, the wild side: the chance a wildlife spawner rolls in a zone at war.
+        /// Vanilla's own chance at peace; at war, raised to <paramref name="warChance"/> but never
+        /// lowered below vanilla's — the wild answers, it does not retreat. A war chance of 0 turns
+        /// the answer off. Only the CHANCE moves: vanilla's cap and group budget still decide how
+        /// many can stand there, so the war refills toward the stock cap and never past it.
+        /// </summary>
+        public static float WarSpawnChance(float vanillaChance, float war, float warChance)
+        {
+            if (float.IsNaN(vanillaChance)) return vanillaChance;
+            if (float.IsNaN(war) || war <= 0f) return vanillaChance;
+            if (float.IsNaN(warChance) || warChance <= 0f) return vanillaChance;
+
+            float raised = warChance > 100f ? 100f : warChance;
+            return raised > vanillaChance ? raised : vanillaChance;
+        }
+
         /// <summary>Every consequence this zone state has earned, for the announcer.</summary>
         public static ConsequenceFlags FlagsFor(ZoneState state,
             float barrenPlague, float barrenScorch, float sickenPlague,

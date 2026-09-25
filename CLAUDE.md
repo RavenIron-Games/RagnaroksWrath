@@ -16,7 +16,7 @@ build UI.
 .\tools\fetch-libs.ps1     # once per machine: copies game/BepInEx DLLs into libs\
 .\tools\run-tests.ps1      # off-game logic tests (net10) — run before every commit
 # After ANY Valheim update, before shipping: does the game still have what we reach for?
-# Covers ALL SIX mods since 2026-09-11 (110 surfaces since 2026-09-24), not just this one and FireFront.
+# Covers ALL SIX mods since 2026-09-11 (122 surfaces since 2026-09-25), not just this one and FireFront.
 dotnet build tools\apiprobe\Probe.csproj -v q --nologo
 .\tools\apiprobe\bin\Debug\net10.0\Probe.exe "<Valheim>\valheim_Data\Managed"
 # And the other half of that question, which apiprobe CANNOT answer: does the binary we ALREADY
@@ -151,7 +151,7 @@ wrong measurement is the most common cause of a long debugging session here.
 | Persistence | **World-scoped sparse file**, keyed by world uid. ZDO custom keys rejected: they attach to an *object*, drift attaches to a *coordinate*, and an anchor prefab per zone would trigger the `ZNetScene.CreateObjectsSorted` → `DestroyZDO` landmine. |
 | FireSystem | **A bridge to FireFront, never a second fire sim.** FireFront (com.raveniron.firefront, same studio) owns ignition, spread, burning, VFX. RW reads its fires by reflection (`FireManager.CollectActiveFirePositions`, public since FireFront 0.17.2) and raises zone `Scorch`. Without FireFront, FireSystem is dormant. Decided 2026-08-25. Amended 2026-08-27 (0.23.0): the bridge carries ONE write — storm lightning calls FireFront's own `IgniteGroundNear` — which keeps the decision intact: RW decides when/where, FireFront owns every consequence. Also since 0.23.0 FireFront is a listed manifest dependency (packaging only; the code stays soft-dependent and dormant without it). |
 | Client visuals | **One role-aware DLL** (amended 2026-08-26; was "separate client plugin"): headless simulates, clients render, hosts do both. Visual-only, no HUD, procedural effects only — no assets, no bundles. `RagnaroksWrath.Client` retired. |
-| Spawn war wild side | **Refill pressure via vanilla's pheromone machinery, never a mod-owned spawner.** Decided 2026-08-26 after decompile: `m_pheromoneMaxInstanceOverride` widens the gate, not the group budget, so the war refills wildlife toward vanilla's cap faster (chance 100, gate 15 — shipped defaults) and can never crowd past it. Accepted deliberately. |
+| Spawn war wild side | **Refill pressure, never a mod-owned spawner, never past vanilla's cap.** Decided 2026-08-26 as vanilla's pheromone machinery ("war horn" SEs, no spawn patch at all). **Amended 2026-09-25 by the owner:** Valheim 1.0.7 stopped reading the pheromone spawn fields, so the wild side has been dead since 0.27.0; it is now a `Priority.Low` prefix on `SpawnSystem.UpdateSpawnList` (`Patch_SpawnWar`) that raises ONLY the wildlife list's spawn chance in a zone at war, in place, restored by a finalizer. Vanilla's cap (ZDOs in the zone's 5x5 snapshot) still decides how many stand there. The raise applies only on a pass where vanilla makes exactly ONE attempt for that spawner. A catch-up pass sizes each group from a stale count and can overshoot, which vanilla's low chance hides and 100% would not. Spawners with no cap are never raised. `ContestWildMaxSpawned` retired (config version 3): it never added an animal even on 0.221. |
 | Timeline | Open-ended. Done when it's done. |
 | Console prefix | `wrath` (e.g. `wrath status`) |
 | GUID / namespace | `com.raveniron.ragnarokswrath` / `RavenIron.RagnaroksWrath` |
@@ -242,6 +242,15 @@ overlap if it is ever installed alongside.
 
 ## Known traps
 
+- **Vanilla can stop READING a field it still declares, and no probe here can see it.** Valheim
+  1.0.7 rewrote `SpawnSystem.UpdateSpawnList` and dropped its pheromone read, but kept every
+  `SE_Stats.m_pheromone*` field. So the war horns compiled, bound, passed apiprobe and revprobe, and
+  did nothing from 0.27.0 on, while the 1.0.7 port edited a line in the very function that set them
+  and noted "no gameplay change". Found 2026-09-25 by an IL scan (`ilspycmd -il` and a grep for
+  `ldfld` of the field) across six game builds: read in 0.221.4, .12 and the .13 PTB, and read
+  nowhere in 1.0.12, 1.0.15 or 1.0.16. **After a Valheim update, for every vanilla FIELD this mod
+  WRITES in order for vanilla to act on it, check that vanilla still loads it.**
+  A signature check answers "does it exist", never "does anyone still read it".
 - **A vanilla `RandomEvent` registered with `m_pauseIfNoPlayerInArea = true` never ends once everyone
   leaves it.** It reads like "pause while nobody is watching" and it is a freeze: `RandomEvent.Update`
   returns before `m_time += dt` whenever the flag is on and no character ZDO is within `m_eventRange`
@@ -353,7 +362,7 @@ overlap if it is ever installed alongside.
   `wrath status` say the session may be running on defaults until a restart. The old code said
   "every value binds exactly as it always did", which stopped being true the day the sections moved.
 
-- **Many settings are read on each PLAYER's game, not the server's — 45 of the 146.** The health
+- **Many settings are read on each PLAYER's game, not the server's — 44 of the 145.** The health
   switch, regen effects and exposure tiers, frost chill, the farming switch, crop list and growth
   slowdown, the whole Consequence section and the wildlife list (`Patch_Consequence` and
   `ConsequenceEffects` run where pickables, plants and spawns are live, which a dedicated server never
@@ -480,6 +489,50 @@ overlap if it is ever installed alongside.
 ---
 
 ## Current state
+
+**VERIFIED IN-GAME 2026-09-25 (Storm10 + the `testing` client, both on Valheim 1.0.16 and this build,
+md5 7b1e8d46): the wild answers.** One Meadows forest zone, (5,-5), three 15-minute rounds, culling
+every 60 s so only the chance roll decided. Deer spawns per round (deer spawned in brackets):
+
+| Round | Deer | Boar spawns | `SpawnWar` lines |
+|---|---|---|---|
+| C1, no war | 2 (5) | 3 | 0 |
+| W, war | 9 (16), one every 101 s, 9 of 9 rolls | 6 | 9 |
+| C2, no war | 5 (9) | 4 | 0 |
+
+- Every W spawn followed a `war census … Deer 50% -> 100%, 0 of cap 4` line. That also confirms
+  vanilla 1.0.16's deer and boar numbers: chance 50%, cap 4, interval about 100 s.
+- The war resolved `Wild`, with relics off on the server.
+- The config migration removed `ContestWildMaxSpawned` from both advanced files ON DISK under real
+  BepInEx.
+- Hostile spawns: 2 / 4 / 1. There's no sign of the same-pass side effect at this size.
+- **The cap held**, in a follow-up 10-minute war round with NO culling (11:19–11:29).
+  - Deer sat at `4 of cap 4` with the chance raised to 100%, and nothing spawned.
+  - Boar went from `3 of cap 4` to one `Spawned Boar x 1`, where boar groups are otherwise up to 3.
+    The group budget trimmed it to fit. Then `4 of cap 4`, and nothing more.
+  - So the war refills toward vanilla's cap and never past it.
+
+**Unreleased, branch `feature/wild-answers`: the wild answers a spawn war again.** `Patch_SpawnWar` replaces the dead
+war horns (see the first known trap and the locked-decisions row); `ContestWildMaxSpawned` retires at
+config version 3. An Opus review of the first cut found six things, all fixed or documented:
+- the catch-up overshoot (hence the one-attempt gate);
+- alt-biome lists and out-of-biome spawners in the log;
+- two stale doc claims;
+- two real migration bugs. `ConfigMigration.Finish` never saved an ADVANCED-file drop, because
+  `ConfigFile.Remove` does not save, so every 0.28.0 install would have been told the key was gone,
+  stamped, and kept it. And a retirement ignored a line an interrupted run left at the key's new place.
+
+Vanilla's shared same-pass counter can let a war's wildlife spawn cost a later hostile spawner one
+interval. That one is documented in `Patch_SpawnWar`, not fixed.
+
+Harness 491/491, and each new test was proved to fail without its fix. apiprobe resolves every
+surface on 1.0.15 and 1.0.16. **In-game acceptance is an A/B on the same Meadows
+spot: no war, war, no war.** The war arm must refill deer clearly faster, counted from `Spawned Deer
+x N` in the CLIENT's LogOutput, because the zone owner runs the spawns. The first raise logs
+`SpawnWar: the wild answers the war in zone ...` once; under VerboseLogging a `SpawnWar: war census`
+line every minute gives each raised spawner's chance and its ZDO count against the cap. Full
+protocol: `_handoffs/RW-warhorn-pheromone-check.md` (outside the repo). `docs/CONFIG.md`'s two entries were
+edited by hand to match the new texts; regenerate it from the first boot this build writes.
 
 **Built and VERIFIED IN-GAME (2026-09-24, 0.28.0, dedicated server Storm10 on Valheim 1.0.15 with
 FireFront 1.0.2): storm lightning checks the rain where it would land, and the config is two files.**
@@ -647,9 +700,11 @@ no client run can establish. Store written, file on disk, read back with values 
 rotated, no `.tmp` orphaned. The two worlds produced two separate stores in the same directory,
 so world-scoping is now demonstrated rather than only unit-tested.
 
-**Known open bugs:** none. The one found 2026-09-23 — with `StormsForceWeather` off, a dedicated
-server's storm lightning ignored natural rain — is fixed in 0.28.0 and verified in-game; see the top
-of Current state.
+**Known open bugs:** one in every SHIPPED build from 0.27.0 through 0.28.0: the wild side of a
+spawn war does nothing (Valheim 1.0.7 stopped reading the pheromone fields it relied on). Fixed on
+`feature/wild-answers`, which is unreleased and awaiting its in-game test; see the top of Current
+state. The one found 2026-09-23 (with `StormsForceWeather` off, a dedicated server's storm lightning
+ignored natural rain) is fixed in 0.28.0 and verified in-game.
 
 The wholly-corrupt-file case was fixed 2026-08-25. `File.ReadAllLines`
 does not throw on binary garbage — it returns junk strings that each fail per-line parsing — so

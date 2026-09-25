@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+**The wild answers a spawn war again.** On contested ground, wildlife (deer, boar and hares by
+default) refills quickly while the war lasts, as it did before Valheim 1.0. Nothing needs doing to
+upgrade.
+
+### The wild's answer, working again
+
+Since Valheim 1.0 (Ragnarok's Wrath 0.27.0), the wild side of a spawn war did nothing. The mod raised
+wildlife spawns through the game's own attraction mechanism, the one the Bog Witch's meads use, and
+Valheim 1.0 stopped reading the two values that mechanism relied on. The war still starred hostile
+spawns harder and still resolved, but no extra animals came.
+
+- **In a contested zone, every animal on the wildlife list spawns at `ContestWildSpawnChance`**
+  (default 100%) instead of the game's own lower chance. It never lowers the game's chance, and 0
+  turns it off.
+- **The game's own limit on how many can stand there is untouched**, so a war refills hunted-out
+  ground quickly and never crowds it past what the game would allow. The first spawn check after
+  you arrive, which makes up for time away, rolls at the game's own chance, because at 100% that
+  catch-up could overshoot the limit. Raids and other event spawns are never affected.
+- **It is read on the game of the player standing there**, like the rest of a war's local effects,
+  so every player needs the setting in their own config.
+- **`ContestWildMaxSpawned` is retired.** It never added an animal even when the game read it, and
+  nothing reads it now. The first start removes its line and says so in the log. Your
+  `ContestWildSpawnChance` stays exactly as you set it.
+
 ## 0.28.0
 
 **The config is two readable files now, with every value kept. Storm lightning checks for rain where

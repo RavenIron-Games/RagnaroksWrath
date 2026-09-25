@@ -89,9 +89,26 @@ class Probe
         M("ZoneSystem", "GetZonePos", AnyStatic, "Vector2s");
         M("SaveSystem", "GetWorldsSaveRootPath", AnyStatic, "FileHelpers+FileSource");
         M("SpawnSystem", "GetLevelUpChance", AnyStatic, "UnityEngine.Vector3", "SpawnSystem+SpawnData");
-        M("SpawnSystem", "GetNrOfInstances", AnyStatic, "UnityEngine.GameObject", "UnityEngine.Vector3", "System.Single", "System.Boolean", "System.Boolean");
         M("ZDOMan", "FindSectorObjects", AnyInstance, "Vector2s", "SimulationDistance", "List<ZDO>", "List<ZDO>");
         M("EnvMan", "GetCurrentDay", AnyInstance);   // rule 5: private, reached by AccessTools
+        // The wild answers (Patch_SpawnWar, 2026-09-25). The prefix binds UpdateSpawnList's
+        // parameters BY NAME (spawners, eventSpawners), so a new signature here is a patch-time
+        // throw, and the SpawnData fields are what it raises and restores. The census counts what
+        // vanilla's cap counts: GetNrOfZDOInstances over the OriginalDistance sector snapshot.
+        M("SpawnSystem", "UpdateSpawnList", AnyInstance, "List<SpawnSystem+SpawnData>", "System.DateTime", "System.Boolean", "System.String");
+        F("SpawnSystem+SpawnData", "m_spawnChance", AnyInstance);
+        F("SpawnSystem+SpawnData", "m_maxSpawned", AnyInstance);
+        F("SpawnSystem+SpawnData", "m_enabled", AnyInstance);
+        F("SpawnSystem+SpawnData", "m_prefab", AnyInstance);
+        M("SpawnSystem", "GetNrOfZDOInstances", AnyStatic, "UnityEngine.GameObject", "List<ZDO>", "System.Boolean");
+        F("SimulationDistance", "OriginalDistance", AnyStatic);
+        // The one-attempt gate reproduces vanilla's own catch-up count: the spawner's interval and
+        // biome, its timestamp on the zone's ZDO, and the heightmap vanilla's Awake finds.
+        F("SpawnSystem+SpawnData", "m_spawnInterval", AnyInstance);
+        F("SpawnSystem+SpawnData", "m_biome", AnyInstance);
+        M("ZDO", "GetLong", AnyInstance, "System.Int32", "System.Int64");
+        M("Heightmap", "FindHeightmap", AnyStatic, "UnityEngine.Vector3");
+        M("Heightmap", "HaveBiome", AnyInstance, "Heightmap+Biome");
         F("ZDOVars", "s_creator", AnyStatic);
         // Review fixes, 2026-09-24: the storm's wait for a running event, the sender checks on
         // relic and zone messages (SenderGuard, RelicSync), and the world-close reset. Most are
@@ -173,7 +190,8 @@ class Probe
             ("RandEventSystem","Awake"), ("Terminal","InitTerminal"), ("Character","GetHoverName"),
             ("Destructible","Destroy"), ("Pickable","GetHoverText"), ("Pickable","Interact"),
             ("Plant","GetHoverText"), ("Plant","UpdateHealth"), ("Player","GetHoverName"),
-            ("SpawnSystem","GetLevelUpChance"), ("ObjectDB","Awake"), ("ObjectDB","CopyOtherDB"),
+            ("SpawnSystem","GetLevelUpChance"), ("SpawnSystem","UpdateSpawnList"),
+            ("ObjectDB","Awake"), ("ObjectDB","CopyOtherDB"),
             ("Projectile","OnHit"), ("TreeBase","RPC_Damage"), ("TreeLog","RPC_Damage"),
             ("WearNTear","OnDestroy"), ("WearNTear","RPC_Damage"), ("ZNetScene","Awake"),
         })

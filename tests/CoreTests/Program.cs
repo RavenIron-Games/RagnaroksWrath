@@ -653,6 +653,52 @@ namespace RagnaroksWrath.Tests
             Check("a file from the future plans nothing",
                 ConfigLedger.Plan(snap, ConfigLedger.CurrentVersion + 5).IsEmpty);
 
+            // VERSION 3: a 0.28.0 file (layout 2) loses exactly the spawn war's dead cap, from the
+            // advanced file where 0.28.0 wrote it, and nothing else moves.
+            var v2 = ConfigLedger.ParseIni(new[]
+            {
+                "[11 - Rivalry]",
+                "EnableRivalry = true",
+                "",
+                "[Meta]",
+                "ConfigVersion = 2",
+            });
+            foreach (var kv in ConfigLedger.ParseIni(new[]
+                     {
+                         "[11 - Rivalry]",
+                         "ContestWildSpawnChance = 100",
+                         "ContestWildMaxSpawned = 15",
+                     }))
+                v2[ConfigLedger.AdvancedPrefix + kv.Key] = kv.Value;
+            var v3Plan = ConfigLedger.Plan(v2, 2);
+            Check("a version-2 file drops ContestWildMaxSpawned from the advanced file, as a retirement",
+                v3Plan.Dropped.Count == 1 &&
+                v3Plan.Dropped[0].Slot == ConfigLedger.AdvancedSlot("11 - Rivalry", "ContestWildMaxSpawned") &&
+                v3Plan.Dropped[0].Because.StartsWith("retired", StringComparison.Ordinal));
+            Check("and carries, resets or backfills nothing: the chance stays exactly as the owner set it",
+                v3Plan.Moved.Count == 0 && v3Plan.ResetToDefault.Count == 0 &&
+                v3Plan.Backfilled.Count == 0 && v3Plan.Relocated.Count == 0 && !v3Plan.ChangesBehaviour);
+            v2.Remove(ConfigLedger.AdvancedSlot("11 - Rivalry", "ContestWildMaxSpawned"));
+            Check("a version-2 file without the key has nothing to do but the stamp",
+                ConfigLedger.Plan(v2, 2).IsEmpty);
+
+            // An interrupted 0.28.0 run: the advanced file was saved (key already at its new place),
+            // the main file was not (still version 1, old line still there). Both lines must go.
+            var torn = ConfigLedger.ParseIni(new[]
+            {
+                "[17 - Rivalry]",
+                "ContestWildMaxSpawned = 15",
+                "",
+                "[Meta]",
+                "ConfigVersion = 1",
+            });
+            torn[ConfigLedger.AdvancedSlot("11 - Rivalry", "ContestWildMaxSpawned")] = "15";
+            var tornPlan = ConfigLedger.Plan(torn, 1);
+            Check("after an interrupted 0.28.0 run the retirement drops the key from BOTH places",
+                tornPlan.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("17 - Rivalry", "ContestWildMaxSpawned")) &&
+                tornPlan.Dropped.Exists(d => d.Slot == ConfigLedger.AdvancedSlot("11 - Rivalry", "ContestWildMaxSpawned")) &&
+                !tornPlan.Moved.Exists(m => m.To.EndsWith("::ContestWildMaxSpawned", StringComparison.Ordinal)));
+
             // THE SAFETY OF A BACKFILL: present means untouched. An admin who already set the key
             // (or a half-finished earlier run that wrote it) must never be overwritten.
             var already = ConfigLedger.ParseIni(new[]
@@ -1048,12 +1094,18 @@ namespace RagnaroksWrath.Tests
 
             int retired = 0;
             foreach (var d in plan.Dropped) if (d.Because.StartsWith("retired", StringComparison.Ordinal)) retired++;
-            Check("exactly the two storm multipliers that never did anything are retired", retired == 2 &&
+            Check("exactly the two storm multipliers and the spawn war's dead cap are retired", retired == 3 &&
                 plan.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("6 - Weather", "StormFireRiskMultiplier")) &&
-                plan.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("6 - Weather", "StormWindMultiplier")));
-            Check("and neither is carried anywhere",
+                plan.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("6 - Weather", "StormWindMultiplier")) &&
+                plan.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("17 - Rivalry", "ContestWildMaxSpawned") &&
+                                         d.Because.StartsWith("retired", StringComparison.Ordinal)));
+            Check("and none of them is carried anywhere",
                 !plan.Moved.Exists(m => m.From.EndsWith("::StormFireRiskMultiplier", StringComparison.Ordinal) ||
-                                        m.From.EndsWith("::StormWindMultiplier", StringComparison.Ordinal)));
+                                        m.From.EndsWith("::StormWindMultiplier", StringComparison.Ordinal) ||
+                                        m.From.EndsWith("::ContestWildMaxSpawned", StringComparison.Ordinal)));
+            Check("while the spawn war's chance, which still means something, is carried",
+                plan.Moved.Exists(m => m.From == ConfigLedger.Slot("17 - Rivalry", "ContestWildSpawnChance") &&
+                                       m.To == ConfigLedger.AdvancedSlot(ModConfig.RivalrySection, "ContestWildSpawnChance")));
             Check("a layout move changes where values live, not how the world behaves", !plan.ChangesBehaviour);
 
             // BepInEx writes sections sorted by NAME. The whole point of the renumbering is that the
@@ -1122,7 +1174,7 @@ namespace RagnaroksWrath.Tests
                     ModConfig.StormDryEnvironment.Value == "Eikthyr" && Math.Abs(ModConfig.StormDryChance.Value - 1f) < 0.0001f);
                 Check("the owner's three-hour outbreak clock survived into the main file",
                     Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f);
-                Check("the file is stamped at version 2", ModConfig.ConfigVersion.Value == 2);
+                Check("the file is stamped at the current version", ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
 
                 var mainAfter = ConfigLedger.ParseIni(File.ReadAllLines(mainPath));
                 var advAfter = ConfigLedger.ParseIni(File.ReadAllLines(advPath));
@@ -1142,8 +1194,48 @@ namespace RagnaroksWrath.Tests
                 Check("the main file written to disk holds no old-layout line at all", noOldSection);
                 Check("the retired settings are gone from the file, not just unbound",
                     !mainAfter.ContainsKey(ConfigLedger.Slot("6 - Weather", "StormWindMultiplier")));
-                Check("the written main file carries the version 2 stamp",
-                    mainAfter.TryGetValue(ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), out string stamp) && stamp == "2");
+                Check("the written main file carries the current version stamp",
+                    mainAfter.TryGetValue(ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), out string stamp) && stamp == ConfigLedger.CurrentVersion.ToString(CultureInfo.InvariantCulture));
+
+                // ---- A 0.28.0 install (version 2, key in the ADVANCED file) through the shipping
+                //      ModConfig, judged on the bytes on disk. The first cut of version 3 planned the
+                //      drop, said so, stamped, and left the line in the file: an advanced-file drop
+                //      needs its own save. Own folder, so nothing below sees these files.
+                string v2Dir = Path.Combine(Path.GetTempPath(), "rw_v2_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(v2Dir);
+                try
+                {
+                    string v2Main = Path.Combine(v2Dir, "com.raveniron.ragnarokswrath.cfg");
+                    string v2Adv = Path.Combine(v2Dir, ConfigLedger.AdvancedFileName);
+                    File.Copy(mainPath, v2Main);
+                    File.Copy(advPath, v2Adv);
+
+                    var mainLines = new List<string>(File.ReadAllLines(v2Main));
+                    int stampAt = mainLines.FindIndex(l => l.StartsWith(ConfigLedger.VersionKey + " =", StringComparison.Ordinal));
+                    mainLines[stampAt] = ConfigLedger.VersionKey + " = 2";
+                    File.WriteAllLines(v2Main, mainLines);
+                    var advLines = new List<string>(File.ReadAllLines(v2Adv));
+                    int chanceAt = advLines.FindIndex(l => l.StartsWith("ContestWildSpawnChance =", StringComparison.Ordinal));
+                    int rivalryAt = advLines.IndexOf("[" + ModConfig.RivalrySection + "]");
+                    Check("(setup) the migrated advanced file has the Rivalry section and the chance line",
+                        chanceAt > rivalryAt && rivalryAt >= 0);
+                    advLines[chanceAt] = "ContestWildSpawnChance = 70";
+                    advLines.Insert(rivalryAt + 1, "ContestWildMaxSpawned = 15");
+                    File.WriteAllLines(v2Adv, advLines);
+
+                    ModConfig.Bind(new ConfigFile { ConfigFilePath = v2Main, WriteOnSave = true },
+                                   new ConfigFile { ConfigFilePath = v2Adv, WriteOnSave = true });
+                    var v2AdvAfter = ConfigLedger.ParseIni(File.ReadAllLines(v2Adv));
+                    Check("a 0.28.0 install loses ContestWildMaxSpawned from the advanced file ON DISK",
+                        !v2AdvAfter.ContainsKey(ConfigLedger.Slot(ModConfig.RivalrySection, "ContestWildMaxSpawned")));
+                    Check("and is stamped current, with the owner's ContestWildSpawnChance of 70 kept",
+                        ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion &&
+                        Math.Abs(ModConfig.ContestWildSpawnChance.Value - 70f) < 0.001f);
+                }
+                finally
+                {
+                    try { Directory.Delete(v2Dir, true); } catch { }
+                }
                 Check($"the advanced file was written with its settings ({advAfter.Count})", advAfter.Count >= 90);
                 Check("the owner's tuning landed in the advanced file on disk (SicknessHealthRegenAtMax, FarmingCropPrefabs)",
                     advAfter.TryGetValue(ConfigLedger.Slot(ModConfig.HealthSection, "SicknessHealthRegenAtMax"), out string regen) &&
@@ -1187,7 +1279,7 @@ namespace RagnaroksWrath.Tests
                 var advA2 = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true };
                 ModConfig.Bind(mainA2, advA2);
                 Check("the next boot, with the file free, finishes the migration and stamps it",
-                    ModConfig.ConfigVersion.Value == 2 &&
+                    ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion &&
                     ConfigLedger.ParseIni(File.ReadAllLines(mainPath)).ContainsKey(ConfigLedger.Slot(ModConfig.WeatherSection, "StormsForceWeather")));
                 Check("with the owner's tuning in the advanced file",
                     SameConfigText("0.5",
@@ -1210,7 +1302,7 @@ namespace RagnaroksWrath.Tests
                 var advB2 = new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true };
                 ModConfig.Bind(mainB2, advB2);
                 Check("and the retry converges on the same result as a clean run",
-                    ModConfig.ConfigVersion.Value == 2 &&
+                    ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion &&
                     Math.Abs(ModConfig.SicknessStaminaRegenAtMax.Value - 0.4f) < 0.0001f &&
                     Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f);
 
@@ -1231,7 +1323,7 @@ namespace RagnaroksWrath.Tests
                 ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
                                new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true });
                 Check("and the retry converges, finding every setting already in its new place with the same value",
-                    ModConfig.ConfigVersion.Value == 2 &&
+                    ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion &&
                     Math.Abs(ModConfig.SicknessStaminaRegenAtMax.Value - 0.4f) < 0.0001f &&
                     Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f &&
                     !RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("in the new layout and") && !RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("at its shipped default"));
@@ -1246,7 +1338,7 @@ namespace RagnaroksWrath.Tests
                 Check("and the main file, never saved, is byte-for-byte as it was", BytesMatch(mainPath, beforeTornAdv));
                 ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
                                new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true });
-                Check("and the retry converges", ModConfig.ConfigVersion.Value == 2 && File.Exists(advPath) &&
+                Check("and the retry converges", ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion && File.Exists(advPath) &&
                     Math.Abs(ModConfig.SicknessHealthRegenAtMax.Value - 0.5f) < 0.0001f);
 
                 File.Copy(fixture, mainPath, true);                 // an interrupted run: advanced saved, main not
@@ -1272,9 +1364,9 @@ namespace RagnaroksWrath.Tests
                         ConfigLedger.ParseIni(File.ReadAllLines(cAdv))[ConfigLedger.Slot(ModConfig.GeneralSection, "TickBudgetMs")]));
                 Check("and the log names both values", RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("= '8' in the new layout") && RavenIron.RagnaroksWrath.RagnaroksWrath.Log.Said("= '5' in the old one"));
                 Check("and wrath status says a value was kept", ConfigMigration.LastSummary.Contains("already had a different value"));
-                Check("while the rest still migrates: the old line is gone, a plain carry landed, the stamp is 2",
+                Check("while the rest still migrates: the old line is gone, a plain carry landed, the stamp is current",
                     !ConfigLedger.ParseIni(File.ReadAllLines(cMain)).ContainsKey(ConfigLedger.Slot("1 - Core", "TickBudgetMs")) &&
-                    Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f && ModConfig.ConfigVersion.Value == 2);
+                    Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f && ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
 
                 File.WriteAllLines(cMain, new[] { "[1 - Core]", "TickBudgetMs = 5", "", "[Meta]", "ConfigVersion = 1" });
                 File.WriteAllLines(cAdv, new[] { "[01 - General]", "TickBudgetMs = 2" });
@@ -1315,7 +1407,7 @@ namespace RagnaroksWrath.Tests
                 ModConfig.Bind(new ConfigFile { ConfigFilePath = mainPath, WriteOnSave = true },
                                new ConfigFile { ConfigFilePath = advPath, WriteOnSave = true });
                 Check("and the next boot, able to read it, migrates it properly",
-                    ModConfig.ConfigVersion.Value == 2 && Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f);
+                    ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion && Math.Abs(ModConfig.PlagueGenesisMeanHours.Value - 3f) < 0.001f);
 
                 // ---- The backup note is judged per file: the main file's backup is the one an owner
                 //      restores, and an advanced-file failure must not make the note deny it exists.
@@ -1392,7 +1484,7 @@ namespace RagnaroksWrath.Tests
                 Check("their storm range was carried into the advanced file",
                     Math.Abs(ModConfig.StormRangeMeters.Value - 128f) < 0.001f);
                 Check("and their wind switch, which moved section AND file, kept its value", !ModConfig.EnableWind.Value);
-                Check("the file ends at version 2", ModConfig.ConfigVersion.Value == 2);
+                Check("the file ends at the current version", ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion);
 
                 // ---- Pieces of the plan, on hand-built snapshots.
                 var leftover = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -2310,6 +2402,24 @@ namespace RagnaroksWrath.Tests
                 && !ConsequenceMath.IsPassivePrefab("BoarPiggy(Clone)", "Deer,Boar,Hare")
                 && !ConsequenceMath.IsPassivePrefab("Deer(Clone)", "")
                 && !ConsequenceMath.IsPassivePrefab("", "Deer"));
+
+            // The wild answers a war (Patch_SpawnWar): the chance rises, it never falls, and
+            // nothing moves at peace. Only the chance: the cap is vanilla's and is not an input.
+            Check("at peace a wildlife spawner rolls vanilla's own chance",
+                ConsequenceMath.WarSpawnChance(20f, 0f, 100f) == 20f
+                && ConsequenceMath.WarSpawnChance(20f, -1f, 100f) == 20f);
+            Check("at war it rolls the war chance, storm-escalated or not",
+                ConsequenceMath.WarSpawnChance(20f, 1f, 100f) == 100f
+                && ConsequenceMath.WarSpawnChance(20f, 2f, 60f) == 60f);
+            Check("a war chance below vanilla's never lowers it: the wild answers, it does not retreat",
+                ConsequenceMath.WarSpawnChance(50f, 1f, 30f) == 50f);
+            Check("a war chance of 0 turns the answer off",
+                ConsequenceMath.WarSpawnChance(20f, 1f, 0f) == 20f);
+            Check("a war chance past 100 is held at 100",
+                ConsequenceMath.WarSpawnChance(20f, 1f, 250f) == 100f);
+            Check("NaN war or NaN chance leaves vanilla's chance alone",
+                ConsequenceMath.WarSpawnChance(20f, float.NaN, 100f) == 20f
+                && ConsequenceMath.WarSpawnChance(20f, 1f, float.NaN) == 20f);
         }
 
         // ---- Rivalry (phase A: the influence ledger) -----------------------------------

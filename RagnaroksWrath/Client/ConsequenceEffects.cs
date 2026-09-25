@@ -37,16 +37,12 @@ namespace RavenIron.RagnaroksWrath.Client
         private SE_Stats _sickTemplate;
         private int _sickHash;
 
-        // Phase D, the wild side: pheromone effects on the LOCAL player, one per wildlife
-        // prefab, applied while standing on contested ground. Vanilla's own spawn-
-        // attraction machinery (the Bog Witch meads' fields, decompile-verified public and
-        // read by UpdateSpawnList on exactly the machine this component runs on) — the
-        // wild answers the war horn through the game's own rules, no spawn patch at all.
-        private readonly List<SE_Stats> _warHorns = new List<SE_Stats>(4);
-        private bool _warHornsBuilt;
+        // Phase D, the wild side, lives in Patches/Patch_SpawnWar.cs since 2026-09-25. It used to
+        // be invisible pheromone "war horns" on the local player, and Valheim 1.0.7 stopped
+        // reading the pheromone spawn fields, so the horns went silent. What stays here is the
+        // client-side proof that this machine SAW the war at all.
         private bool _warSeenLogged;
-        private float _nextWarHorn;
-        private float _nextWarCensus;
+        private float _nextWarWatch;
 
         private void Update()
         {
@@ -67,8 +63,8 @@ namespace RavenIron.RagnaroksWrath.Client
 
                 Vector3 origin = player.transform.position;
 
-                // Task 12's sickness sweep, behind its own toggles — the war horns below
-                // are rivalry's and deliberately NOT gated on the sickness switch.
+                // Task 12's sickness sweep, behind its own toggles — the war watch below
+                // is rivalry's and deliberately NOT gated on the sickness switch.
                 if (ModConfig.EnableConsequence.Value && ModConfig.ConsequenceSicken.Value)
                 {
                     string passiveList = ModConfig.WildlifePrefabs.Value;
@@ -95,7 +91,7 @@ namespace RavenIron.RagnaroksWrath.Client
                     }
                 }
 
-                UpdateWarHorns(player, origin);
+                WatchWar(origin);
             }
             catch (Exception ex)
             {
@@ -130,89 +126,21 @@ namespace RavenIron.RagnaroksWrath.Client
         }
 
         /// <summary>
-        /// On contested ground, carry the wild's war horns: TTL'd pheromone effects that
-        /// make the wildlife list spawn keener nearby, through vanilla's own machinery.
-        /// Refreshed while the war holds; expiry silences them when you leave or it ends.
+        /// Once per session, the line that proves this client SAW a war under its player: server
+        /// war state -> ring push -> this cache. The wild's answer itself is Patch_SpawnWar's,
+        /// and it logs its own proof the first time it raises a chance.
         /// </summary>
-        private void UpdateWarHorns(Player player, Vector3 origin)
+        private void WatchWar(Vector3 origin)
         {
-            if (!ModConfig.EnableRivalry.Value) return;
-            if (Time.time < _nextWarHorn) return;
-            _nextWarHorn = Time.time + 5f;
+            if (_warSeenLogged || !ModConfig.EnableRivalry.Value) return;
+            if (Time.time < _nextWarWatch) return;
+            _nextWarWatch = Time.time + 5f;
 
             float war = ZoneSync.WarAt(ZoneKey.FromWorldPos(origin));
-            if (war <= 0f) return;   // horns fall silent by TTL expiry, no bookkeeping
+            if (war <= 0f) return;
 
-            if (!_warSeenLogged)
-            {
-                _warSeenLogged = true;   // once per session: the client SAW the war
-                RagnaroksWrath.Log.LogInfo($"ConsequenceEffects: war intensity {war:F1} underfoot.");
-            }
-
-            if (!_warHornsBuilt) BuildWarHorns();
-
-            SEMan seman = player.GetSEMan();
-            if (seman == null) return;
-
-            for (int i = 0; i < _warHorns.Count; i++)
-                seman.AddStatusEffect(_warHorns[i], resetTime: true);
-
-            // Verbose war census: the numbers vanilla's budget actually sees. m_maxSpawned
-            // is raw in the group-size line (engine fact, 2026-08-26), so "loaded" at or
-            // above a spawner's stock cap means zero yield no matter what the horns say.
-            if (ModConfig.VerboseLogging.Value && Time.time >= _nextWarCensus)
-            {
-                _nextWarCensus = Time.time + 60f;
-                var census = new System.Text.StringBuilder("ConsequenceEffects: war census —");
-                for (int i = 0; i < _warHorns.Count; i++)
-                {
-                    GameObject target = _warHorns[i].m_pheromoneTarget;
-                    if (target == null) continue;
-                    // 1.0.7 removed the one-argument overload. Its whole body was
-                    // GetNrOfInstances(prefab, Vector3.zero, 0f), and maxRange 0 still means
-                    // "no range limit", so this is the same count, not a near-miss.
-                    int loaded = SpawnSystem.GetNrOfInstances(target, Vector3.zero, 0f);
-                    int near = SpawnSystem.GetNrOfInstances(target, origin, 200f);
-                    census.Append($" {target.name}: {loaded} loaded, {near} within 200m;");
-                }
-                RagnaroksWrath.Log.LogInfo(census.ToString());
-            }
-        }
-
-        private void BuildWarHorns()
-        {
-            _warHornsBuilt = true;   // one attempt; missing prefabs log and stay missing
-
-            ZNetScene scene = ZNetScene.instance;
-            if (scene == null) { _warHornsBuilt = false; return; }   // not up yet; retry later
-
-            string[] prefabs = (ModConfig.WildlifePrefabs.Value ?? "")
-                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-
-            for (int i = 0; i < prefabs.Length; i++)
-            {
-                string name = prefabs[i].Trim();
-                GameObject prefab = scene.GetPrefab(name);
-                if (prefab == null)
-                {
-                    RagnaroksWrath.Log.LogWarning(
-                        $"ConsequenceEffects: war-horn prefab '{name}' not found — skipped.");
-                    continue;
-                }
-
-                var horn = ScriptableObject.CreateInstance<SE_Stats>();
-                horn.name = "RW_WarHorn_" + name;
-                horn.m_name = "";          // invisible: the war shows as ANIMALS, not icons
-                horn.m_ttl = 15f;
-                horn.m_pheromoneTarget = prefab;
-                horn.m_pheromoneSpawnChanceOverride = ModConfig.ContestWildSpawnChance.Value;
-                horn.m_pheromoneMaxInstanceOverride = ModConfig.ContestWildMaxSpawned.Value;
-                _warHorns.Add(horn);
-            }
-
-            if (_warHorns.Count > 0)
-                RagnaroksWrath.Log.LogInfo(
-                    $"ConsequenceEffects: {_warHorns.Count} war horn(s) ready for contested ground.");
+            _warSeenLogged = true;
+            RagnaroksWrath.Log.LogInfo($"ConsequenceEffects: war intensity {war:F1} underfoot.");
         }
     }
 }
