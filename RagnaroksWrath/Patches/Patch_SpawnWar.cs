@@ -21,12 +21,26 @@ namespace RavenIron.RagnaroksWrath.Patches
     /// in UpdateSpawnList; there is no smaller seam.
     ///
     /// WHAT IT DOES. While the zone a SpawnSystem stands in is at war, every wildlife-list spawner
-    /// in its base lists rolls ContestWildSpawnChance instead of its own, never lower. The value is
-    /// raised IN PLACE and put back by the finalizer, which Harmony runs even when the original
-    /// throws. A cloned SpawnData would do the same job but lose the object identity other spawn
-    /// mods hang their per-spawner settings on. Only the CHANCE moves: vanilla's cap (a ZDO count
-    /// over the zone's 5x5 sector snapshot) and its raw-cap group budget are untouched, so the war
-    /// refills toward the stock population and never past it.
+    /// in its ambient lists (base and alt-biome, never event lists) rolls ContestWildSpawnChance
+    /// instead of its own, never lower. The value is raised IN PLACE and put back by the finalizer,
+    /// which Harmony runs even when the original throws. A cloned SpawnData would do the same job
+    /// but lose the object identity other spawn mods hang their per-spawner settings on.
+    ///
+    /// NEVER PAST THE CAP, AND WHY THAT TAKES A GATE. Vanilla 1.0.16 gates each attempt on
+    /// `count + spawnedThisPass >= m_maxSpawned`, but sizes the group from `m_maxSpawned - count`
+    /// alone, and `count` is a snapshot taken before the pass. So a CATCH-UP pass (several intervals
+    /// due at once, as on arrival) can spawn a group, then another sized as if the first did not
+    /// exist: cap 3 with groups of 1-2 reaches 4. Vanilla's own low chance makes that rare; 100%
+    /// would make it routine. So the chance is raised only on a pass where vanilla will make
+    /// exactly ONE attempt for that spawner, computed with vanilla's own key and expression. One
+    /// attempt is one group of at most `m_maxSpawned - count`, which cannot pass the cap. Catch-up
+    /// passes roll at vanilla's chance, and a spawner with no cap at all (0) is never raised.
+    /// Found by the review of this change.
+    ///
+    /// A KNOWN SIDE EFFECT, vanilla's: `spawnedThisPass` is shared by every entry in the list, so a
+    /// wildlife spawn early in a pass can stop a later spawner, hostiles included, for that
+    /// interval. The war makes wildlife spawns more common, so it makes this more common too. It
+    /// costs at most one interval per pass, and the in-game test counts hostile spawns to size it.
     ///
     /// WHERE IT RUNS. UpdateSpawning returns unless this machine owns the zone AND has a local
     /// player, so clients and listen hosts, never a dedicated server: the setting is read from the
@@ -57,7 +71,8 @@ namespace RavenIron.RagnaroksWrath.Patches
         private static float _nextErrorLog;
 
         private static void Prefix(SpawnSystem __instance, List<SpawnSystem.SpawnData> spawners,
-                                   bool eventSpawners, bool __runOriginal)
+                                   DateTime currentTime, bool eventSpawners, string groupSalt,
+                                   bool __runOriginal)
         {
             try
             {
@@ -73,12 +88,23 @@ namespace RavenIron.RagnaroksWrath.Patches
                 float war = ZoneSync.WarAt(zone);
                 if (war <= 0f) return;
 
+                ZDO zdo = __instance.GetComponent<ZNetView>()?.GetZDO();
+                if (zdo == null) return;
+
+                // Vanilla skips a spawner whose biome this zone lacks before it rolls, so raising one
+                // would change nothing, and the log line would claim an answer that never came. Found
+                // the way vanilla's own Awake finds it: m_heightmap is private (rule 5).
+                Heightmap hmap = Heightmap.FindHeightmap(__instance.transform.position);
+
                 string wildlife = ModConfig.WildlifePrefabs.Value;
                 for (int i = 0; i < spawners.Count; i++)
                 {
                     SpawnSystem.SpawnData s = spawners[i];
                     if (s == null || !s.m_enabled || s.m_prefab == null) continue;
+                    if (s.m_maxSpawned <= 0) continue;   // no cap to refill toward: raising would grow it forever
+                    if (hmap != null && !hmap.HaveBiome(s.m_biome)) continue;
                     if (!ConsequenceMath.IsPassivePrefab(s.m_prefab.name, wildlife)) continue;
+                    if (AttemptsDue(zdo, s, i + 1, groupSalt, currentTime) != 1) continue;   // see NEVER PAST THE CAP
 
                     float chance = ConsequenceMath.WarSpawnChance(s.m_spawnChance, war, warChance);
                     if (!(chance > s.m_spawnChance)) continue;
@@ -102,6 +128,21 @@ namespace RavenIron.RagnaroksWrath.Patches
 
         // Void on purpose: it observes, it does not change what vanilla throws.
         private static void Finalizer() => Restore();
+
+        /// <summary>
+        /// How many attempts vanilla's UpdateSpawnList will make for this spawner in this pass,
+        /// with its own key and its own expression (decompiled 1.0.16, and identical in 1.0.15): the
+        /// timestamp key is the group salt, the prefab name and the spawner's 1-based position in the
+        /// list, counted over every entry, disabled ones included. Read before vanilla rewrites it,
+        /// so it is the value vanilla is about to read.
+        /// </summary>
+        private static int AttemptsDue(ZDO zdo, SpawnSystem.SpawnData s, int position, string groupSalt, DateTime now)
+        {
+            int key = (groupSalt + s.m_prefab.name + position).GetStableHashCode();
+            TimeSpan since = now - new DateTime(zdo.GetLong(key, 0L));
+            return Mathf.Min((s.m_maxSpawned == 0) ? 1 : s.m_maxSpawned,
+                             (int)(since.TotalSeconds / (double)s.m_spawnInterval));
+        }
 
         private static void Restore()
         {

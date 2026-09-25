@@ -178,6 +178,15 @@ namespace RavenIron.RagnaroksWrath.Config
                 bool dropsLanded = true;
                 if (advancedSaved && _plan != null) dropsLanded = Drop(main, advanced, _plan);
 
+                // A drop in the ADVANCED file reaches the disk only through another save of that file:
+                // the save above ran first, and ConfigFile.Remove does not save. Until version 3 no rung
+                // dropped anything there, so the gap never showed. The first advanced-file retirement
+                // (ContestWildMaxSpawned) was reported removed, stamped, and still sat on disk, and a
+                // stamped file never plans it again. Found by the review of the wild-answers change.
+                // A failed save here withholds the stamp like any other, so the next boot retries.
+                if (advancedSaved && dropsLanded && DropsInAdvanced(_plan))
+                    advancedSaved = TrySave(advanced, ConfigLedger.AdvancedFileName);
+
                 if (!advancedSaved || !dropsLanded)
                 {
                     RagnaroksWrath.Log.LogWarning(
@@ -368,6 +377,15 @@ namespace RavenIron.RagnaroksWrath.Config
         /// A LINE THIS BUILD STILL BINDS IS NEVER DROPPED: Bind would hand back the live entry and
         /// Remove would unbind a setting the mod is using. Refused by name instead.
         /// </summary>
+        /// <summary>True when the plan takes a line out of the advanced file, which then needs its own save.</summary>
+        private static bool DropsInAdvanced(ConfigLedger.MigrationPlan plan)
+        {
+            if (plan == null) return false;
+            foreach (ConfigLedger.DroppedSlot d in plan.Dropped)
+                if (ConfigLedger.SplitSlot(d.Slot, out bool isAdvanced, out _, out _) && isAdvanced) return true;
+            return false;
+        }
+
         /// <returns>False when a drop threw — the caller withholds the stamp so the next boot retries.</returns>
         internal static bool Drop(ConfigFile main, ConfigFile advanced, ConfigLedger.MigrationPlan plan)
         {

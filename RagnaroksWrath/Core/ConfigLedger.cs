@@ -688,7 +688,16 @@ namespace RavenIron.RagnaroksWrath.Core
                     {
                         if (r == null || r.Slot == null) continue;
                         Forget(plan, decided, written, r.Slot);
-                        displaced.Remove(r.Slot);
+
+                        // An interrupted earlier run can leave the key in BOTH places: the old line
+                        // the view carried here, and a line already at this slot, recorded as
+                        // displaced. Both go. Forgetting the displaced one kept it on disk for good,
+                        // since the stamp this plan earns means nothing plans it again.
+                        if (displaced.TryGetValue(r.Slot, out string there))
+                        {
+                            displaced.Remove(r.Slot);
+                            plan.Dropped.Add(new DroppedSlot { Slot = there, Because = "retired: " + (r.Because ?? "no longer used") });
+                        }
                         if (view.TryGetValue(r.Slot, out string stored))
                         {
                             view.Remove(r.Slot);

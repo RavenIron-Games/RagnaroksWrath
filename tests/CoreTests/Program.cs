@@ -682,6 +682,23 @@ namespace RagnaroksWrath.Tests
             Check("a version-2 file without the key has nothing to do but the stamp",
                 ConfigLedger.Plan(v2, 2).IsEmpty);
 
+            // An interrupted 0.28.0 run: the advanced file was saved (key already at its new place),
+            // the main file was not (still version 1, old line still there). Both lines must go.
+            var torn = ConfigLedger.ParseIni(new[]
+            {
+                "[17 - Rivalry]",
+                "ContestWildMaxSpawned = 15",
+                "",
+                "[Meta]",
+                "ConfigVersion = 1",
+            });
+            torn[ConfigLedger.AdvancedSlot("11 - Rivalry", "ContestWildMaxSpawned")] = "15";
+            var tornPlan = ConfigLedger.Plan(torn, 1);
+            Check("after an interrupted 0.28.0 run the retirement drops the key from BOTH places",
+                tornPlan.Dropped.Exists(d => d.Slot == ConfigLedger.Slot("17 - Rivalry", "ContestWildMaxSpawned")) &&
+                tornPlan.Dropped.Exists(d => d.Slot == ConfigLedger.AdvancedSlot("11 - Rivalry", "ContestWildMaxSpawned")) &&
+                !tornPlan.Moved.Exists(m => m.To.EndsWith("::ContestWildMaxSpawned", StringComparison.Ordinal)));
+
             // THE SAFETY OF A BACKFILL: present means untouched. An admin who already set the key
             // (or a half-finished earlier run that wrote it) must never be overwritten.
             var already = ConfigLedger.ParseIni(new[]
@@ -1179,6 +1196,46 @@ namespace RagnaroksWrath.Tests
                     !mainAfter.ContainsKey(ConfigLedger.Slot("6 - Weather", "StormWindMultiplier")));
                 Check("the written main file carries the current version stamp",
                     mainAfter.TryGetValue(ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), out string stamp) && stamp == ConfigLedger.CurrentVersion.ToString(CultureInfo.InvariantCulture));
+
+                // ---- A 0.28.0 install (version 2, key in the ADVANCED file) through the shipping
+                //      ModConfig, judged on the bytes on disk. The first cut of version 3 planned the
+                //      drop, said so, stamped, and left the line in the file: an advanced-file drop
+                //      needs its own save. Own folder, so nothing below sees these files.
+                string v2Dir = Path.Combine(Path.GetTempPath(), "rw_v2_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(v2Dir);
+                try
+                {
+                    string v2Main = Path.Combine(v2Dir, "com.raveniron.ragnarokswrath.cfg");
+                    string v2Adv = Path.Combine(v2Dir, ConfigLedger.AdvancedFileName);
+                    File.Copy(mainPath, v2Main);
+                    File.Copy(advPath, v2Adv);
+
+                    var mainLines = new List<string>(File.ReadAllLines(v2Main));
+                    int stampAt = mainLines.FindIndex(l => l.StartsWith(ConfigLedger.VersionKey + " =", StringComparison.Ordinal));
+                    mainLines[stampAt] = ConfigLedger.VersionKey + " = 2";
+                    File.WriteAllLines(v2Main, mainLines);
+                    var advLines = new List<string>(File.ReadAllLines(v2Adv));
+                    int chanceAt = advLines.FindIndex(l => l.StartsWith("ContestWildSpawnChance =", StringComparison.Ordinal));
+                    int rivalryAt = advLines.IndexOf("[" + ModConfig.RivalrySection + "]");
+                    Check("(setup) the migrated advanced file has the Rivalry section and the chance line",
+                        chanceAt > rivalryAt && rivalryAt >= 0);
+                    advLines[chanceAt] = "ContestWildSpawnChance = 70";
+                    advLines.Insert(rivalryAt + 1, "ContestWildMaxSpawned = 15");
+                    File.WriteAllLines(v2Adv, advLines);
+
+                    ModConfig.Bind(new ConfigFile { ConfigFilePath = v2Main, WriteOnSave = true },
+                                   new ConfigFile { ConfigFilePath = v2Adv, WriteOnSave = true });
+                    var v2AdvAfter = ConfigLedger.ParseIni(File.ReadAllLines(v2Adv));
+                    Check("a 0.28.0 install loses ContestWildMaxSpawned from the advanced file ON DISK",
+                        !v2AdvAfter.ContainsKey(ConfigLedger.Slot(ModConfig.RivalrySection, "ContestWildMaxSpawned")));
+                    Check("and is stamped current, with the owner's ContestWildSpawnChance of 70 kept",
+                        ModConfig.ConfigVersion.Value == ConfigLedger.CurrentVersion &&
+                        Math.Abs(ModConfig.ContestWildSpawnChance.Value - 70f) < 0.001f);
+                }
+                finally
+                {
+                    try { Directory.Delete(v2Dir, true); } catch { }
+                }
                 Check($"the advanced file was written with its settings ({advAfter.Count})", advAfter.Count >= 90);
                 Check("the owner's tuning landed in the advanced file on disk (SicknessHealthRegenAtMax, FarmingCropPrefabs)",
                     advAfter.TryGetValue(ConfigLedger.Slot(ModConfig.HealthSection, "SicknessHealthRegenAtMax"), out string regen) &&

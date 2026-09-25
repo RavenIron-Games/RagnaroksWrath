@@ -102,6 +102,13 @@ class Probe
         F("SpawnSystem+SpawnData", "m_prefab", AnyInstance);
         M("SpawnSystem", "GetNrOfZDOInstances", AnyStatic, "UnityEngine.GameObject", "List<ZDO>", "System.Boolean");
         F("SimulationDistance", "OriginalDistance", AnyStatic);
+        // The one-attempt gate reproduces vanilla's own catch-up count: the spawner's interval and
+        // biome, its timestamp on the zone's ZDO, and the heightmap vanilla's Awake finds.
+        F("SpawnSystem+SpawnData", "m_spawnInterval", AnyInstance);
+        F("SpawnSystem+SpawnData", "m_biome", AnyInstance);
+        M("ZDO", "GetLong", AnyInstance, "System.Int32", "System.Int64");
+        M("Heightmap", "FindHeightmap", AnyStatic, "UnityEngine.Vector3");
+        M("Heightmap", "HaveBiome", AnyInstance, "Heightmap+Biome");
         F("ZDOVars", "s_creator", AnyStatic);
         // Review fixes, 2026-09-24: the storm's wait for a running event, the sender checks on
         // relic and zone messages (SenderGuard, RelicSync), and the world-close reset. Most are

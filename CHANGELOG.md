@@ -17,8 +17,9 @@ spawns harder and still resolved, but no extra animals came.
   (default 100%) instead of the game's own lower chance. It never lowers the game's chance, and 0
   turns it off.
 - **The game's own limit on how many can stand there is untouched**, so a war refills hunted-out
-  ground quickly and never crowds it past what the game would allow. Raids and other event spawns
-  are never affected.
+  ground quickly and never crowds it past what the game would allow. The first spawn check after
+  you arrive, which makes up for time away, rolls at the game's own chance, because at 100% that
+  catch-up could overshoot the limit. Raids and other event spawns are never affected.
 - **It is read on the game of the player standing there**, like the rest of a war's local effects,
   so every player needs the setting in their own config.
 - **`ContestWildMaxSpawned` is retired.** It never added an animal even when the game read it, and
