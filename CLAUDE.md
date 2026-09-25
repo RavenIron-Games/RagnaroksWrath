@@ -490,8 +490,24 @@ overlap if it is ever installed alongside.
 
 ## Current state
 
-**Built and unit-tested, NOT yet verified in-game (2026-09-25, unreleased, branch
-`feature/wild-answers`): the wild answers a spawn war again.** `Patch_SpawnWar` replaces the dead
+**VERIFIED IN-GAME 2026-09-25 (Storm10 + the `testing` client, both on Valheim 1.0.16 and this build,
+md5 7b1e8d46): the wild answers.** One Meadows forest zone, (5,-5), three 15-minute rounds, culling
+every 60 s so only the chance roll decided. Deer spawns per round (deer spawned in brackets):
+
+| Round | Deer | Boar spawns | `SpawnWar` lines |
+|---|---|---|---|
+| C1, no war | 2 (5) | 3 | 0 |
+| W, war | 9 (16), one every 101 s, 9 of 9 rolls | 6 | 9 |
+| C2, no war | 5 (9) | 4 | 0 |
+
+- Every W spawn followed a `war census … Deer 50% -> 100%, 0 of cap 4` line. That also confirms
+  vanilla 1.0.16's deer and boar numbers: chance 50%, cap 4, interval about 100 s.
+- The war resolved `Wild`, with relics off on the server.
+- The config migration removed `ContestWildMaxSpawned` from both advanced files ON DISK under real
+  BepInEx.
+- Hostile spawns: 2 / 4 / 1. There's no sign of the same-pass side effect at this size.
+
+**Unreleased, branch `feature/wild-answers`: the wild answers a spawn war again.** `Patch_SpawnWar` replaces the dead
 war horns (see the first known trap and the locked-decisions row); `ContestWildMaxSpawned` retires at
 config version 3. An Opus review of the first cut found six things, all fixed or documented:
 - the catch-up overshoot (hence the one-attempt gate);
