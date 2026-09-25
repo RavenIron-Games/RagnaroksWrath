@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.29.0
 
 **The wild answers a spawn war again.** On contested ground, wildlife (deer, boar and hares by
 default) refills quickly while the war lasts, as it did before Valheim 1.0. Nothing needs doing to
@@ -25,6 +25,10 @@ spawns harder and still resolved, but no extra animals came.
 - **`ContestWildMaxSpawned` is retired.** It never added an animal even when the game read it, and
   nothing reads it now. The first start removes its line and says so in the log. Your
   `ContestWildSpawnChance` stays exactly as you set it.
+
+### Packaging
+
+- Tested on Valheim 1.0.16. The BepInExPack dependency is now 5.4.2351; FireFront stays at 1.0.2.
 
 ## 0.28.0
 

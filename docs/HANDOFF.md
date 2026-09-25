@@ -1,3 +1,17 @@
+# Session handoff — 2026-09-25 (0.29.0: the wild answers a spawn war again)
+
+**0.29.0** is PR #13 (`Patch_SpawnWar`, `ContestWildMaxSpawned` retired at config version 3,
+verified in-game on Valheim 1.0.16; CLAUDE.md's Current state has the numbers) plus the version bump,
+the BepInExPack pin moved to 5.4.2351, and `docs/CONFIG.md` regenerated. 0.28.0 and FireFront 1.0.2
+went live on Hexium 2026-09-24, so the 0.28.0 section below is done except its website update.
+Package from a fresh clone of the merge commit; upload is RavenIron's to do. FireFront is already
+at 1.0.2 on the store, so there is no upload order this time.
+
+Still open: the website's RW page (0.28.0's lightning in rain and two config files, 0.29.0's
+wild answer); the nameplate RENDER check, reported working 2026-09-24 but not yet written up
+(which title, whose plate, which server); revprobe of the other four mods' shipped binaries on
+1.0.16; the FireFront 1.0.2 GitHub pre-release its changelog promises.
+
 # Session handoff — 2026-09-24 (0.28.0: two config files, lightning checks the rain, PR #9 folded in)
 
 Read `CLAUDE.md` first, then this. The 2026-09-23 handoff below is superseded; its OPEN BUG section

@@ -19,6 +19,10 @@ The first start of 0.28.0 moves every setting into this layout and keeps its val
 
 If you ever go back to an older version of the mod, restore that backup first: older versions cannot read the new layout and would start from their defaults.
 
+### Upgrading from 0.28.0
+
+The first start of 0.29.0 removes one setting that never added an animal, `ContestWildMaxSpawned`, and changes nothing else. Both files are backed up beside themselves first as `.v2.bak`, and the log says what was removed.
+
 ## Sections
 
 - [01 - General](#01---general)
@@ -259,7 +263,7 @@ In `com.raveniron.ragnarokswrath.advanced.cfg`:
 - **`ContestCareThreshold`** (number, default `0.3`, 0.05 to 5): Total care, summed across everyone, a blighted area needs before it counts as actively contested rather than simply lost.
 - **`StormContestMultiplier`** (number, default `2`, 1 to 5): How much fiercer a contested area's war gets while a Devastating Storm passes over it. 1 turns this off. Feeds directly into the star-odds bonus below, so a stormy war spawns tougher enemies than a calm one. The wild's answer to a war does not grow with it.
 - **`ContestStarBonus`** (number, default `1`, 0 to 5): Extra chance for hostile spawns to come up starred, per point of war intensity, on contested ground. Read from the nearby player's own game, not the server's. At the default of 1.0, ordinary contested ground doubles the star chance, and a storm-escalated war (see the storm multiplier above) triples it. Stacks with the separate corruption-based star bonus in the Consequence settings. Like those settings, this one is checked on whichever player's game is nearby when the spawn happens, so set it the same in every player's own config.
-- **`ContestWildSpawnChance`** (number, default `100`, 0 to 100): Spawn chance, as a percentage, for the wildlife list in a contested zone: the wild answering the war. Never lowers the game's own chance, and never raises the game's own cap on how many can stand there. 0 turns the answer off. Applied from the game of the player standing there, not the server's. At the default of 100, every wildlife spawn attempt in a contested zone succeeds, where the game's own chance is usually far lower, so hunted-out ground refills quickly while the war lasts. How many animals can stand there is still the game's own limit, war or no war. Every player needs this set in their own config; the server's copy is never read for it.
+- **`ContestWildSpawnChance`** (number, default `100`, 0 to 100, read on each player's own game): Spawn chance, as a percentage, for the wildlife list in a contested zone: the wild answering the war. Never lowers the game's own chance, and never raises the game's own cap on how many can stand there. 0 turns the answer off. Applied from the game of the player standing there, not the server's. At the default of 100, every wildlife spawn attempt in a contested zone succeeds, where the game's own chance is usually far lower, so hunted-out ground refills quickly while the war lasts. How many animals can stand there is still the game's own limit, war or no war. Every player needs this set in their own config; the server's copy is never read for it.
 
 ## 12 - Relic
 
