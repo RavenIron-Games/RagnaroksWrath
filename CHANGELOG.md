@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Website link moved to https://wubarrk.rossgilsonlabs.dev.
+
 ## 0.29.0
 
 **The wild answers a spawn war again.** On contested ground, wildlife (deer, boar and hares by
