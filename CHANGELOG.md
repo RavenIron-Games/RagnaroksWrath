@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.30.0
+## 0.30.0 — 2026-11-17
 
 **Fiercer storms with real lightning, titles you choose, and the server's settings on every
 player's game.** Every player must update together: this version refuses any player on another
@@ -81,8 +81,8 @@ A bolt used to be invisible: a fire and a line of text. Now each strike is a rea
 ### Packaging
 
 - FireFront pinned at **1.0.4** (was 1.0.2), the version this release was tested with. Its
-  reflected surfaces were checked by decompiling the 1.0.4 build.
-- BepInExPack pinned at **5.4.2360** (was 5.4.2351), the current one on both stores.
+  reflected surfaces were checked by decompiling the 1.0.4 build. 1.0.4 is on both Hexium and
+  Thunderstore, so unlike 0.29.1 this version installs from both stores.
 
 ### Choose your title
 
@@ -121,6 +121,13 @@ so changing them meant a full restart for every player. They now apply the momen
   `StormRangeMeters` in the advanced file; its default stays 96 m. A bigger storm still throws about
   the same number of bolts, each near a player inside it, so it covers more ground without striking
   more often.
+
+## 0.29.1 — 2026-11-01
+
+Updated due to the Valheim 1.0.21 patch. Rebuilt and checked against Valheim 1.0.21 (network
+version 41); no code changes beyond the version string. The BepInExPack dependency is now 5.4.2360.
+
+- Website link moved to https://ravenirongames.com/.
 
 ## 0.29.0
 
