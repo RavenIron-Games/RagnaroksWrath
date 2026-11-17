@@ -72,6 +72,12 @@ RagnaroksWrath/            server plugin (net472) — all simulation
   Feedback/MessageFeed.cs  the ONLY player-facing output channel
   Systems/World/           the simulation systems
   Net/                     TitleSync, ZoneSync — server-to-client state
+  Vendor/ServerSync.cs     blaxxun's ServerSync, vendored byte-identical to Valkyrie's Cargo's
+                           copy (since 2026-11-17). Never edit; Config/ServerSyncSetup.cs wires it.
+                           NOT in a "Libs" folder: .gitignore's libs/ would silently drop it.
+                           Every setting follows the server except SyncRules' locals. Version gate
+                           is ModRequired + minimum = this build: every player runs exactly this
+                           version or is refused at join
   Visuals/                 client-side procedural effects (PlagueFog); gated on a real GPU
   Patches/                 Harmony patches
 tests/CoreTests/           net10 harness; compiles the REAL source against stubs
@@ -147,7 +153,7 @@ wrong measurement is the most common cause of a long debugging session here.
 | Data mining (kills, deaths, playtime, gear) | **None.** That is The Raven's Call's job, a separate mod. No data connection between them. |
 | Old Steve / SkaldSaga source | Folded into The Raven's Call. **Not referenced here.** Clean build. |
 | `EnvMan` / textures / materials | **Never touched.** See rule 4. |
-| Devastating Storms | `RandEventSystem` event with `m_forceEnvironment` **left empty** — full vanilla event (name, duration, music, spawns, banner) without overriding weather. A `StormsForceWeather` toggle, **default false**, exists for owners who want the storm to look like one; verified 2026-09-03 to coexist with Seasonality 3.8.0 because vanilla consults the event override before the biome weather list Seasonality rewrites. |
+| Devastating Storms | `RandEventSystem` event with `m_forceEnvironment` **left empty** — full vanilla event (name, duration, music, spawns, banner) without overriding weather. A `StormsForceWeather` toggle exists for owners who want the storm to look like one: **default false until the owner flipped it to TRUE on 2026-11-17** (config version 4, which also resets a file still holding the old `false`, along with `StormDurationSeconds` 300 → 600 and `LightningMeanMinutes` 15 → 4); verified 2026-09-03 to coexist with Seasonality 3.8.0 because vanilla consults the event override before the biome weather list Seasonality rewrites. |
 | Persistence | **World-scoped sparse file**, keyed by world uid. ZDO custom keys rejected: they attach to an *object*, drift attaches to a *coordinate*, and an anchor prefab per zone would trigger the `ZNetScene.CreateObjectsSorted` → `DestroyZDO` landmine. |
 | FireSystem | **A bridge to FireFront, never a second fire sim.** FireFront (com.raveniron.firefront, same studio) owns ignition, spread, burning, VFX. RW reads its fires by reflection (`FireManager.CollectActiveFirePositions`, public since FireFront 0.17.2) and raises zone `Scorch`. Without FireFront, FireSystem is dormant. Decided 2026-08-25. Amended 2026-08-27 (0.23.0): the bridge carries ONE write — storm lightning calls FireFront's own `IgniteGroundNear` — which keeps the decision intact: RW decides when/where, FireFront owns every consequence. Also since 0.23.0 FireFront is a listed manifest dependency (packaging only; the code stays soft-dependent and dormant without it). |
 | Client visuals | **One role-aware DLL** (amended 2026-08-26; was "separate client plugin"): headless simulates, clients render, hosts do both. Visual-only, no HUD, procedural effects only — no assets, no bundles. `RagnaroksWrath.Client` retired. |
@@ -267,10 +273,11 @@ overlap if it is ever installed alongside.
   only to move that line. **Before every RW release, compare the FireFront pin with
   `valheim.hexium.gg/api/experimental/package/RavenIronStudios/FireFront/`**, and move it whenever a
   FireFront release has shipped since (after checking the reflected surfaces still resolve). **The pin may
-  also LEAD the store, and then the upload order is the gate:** since 2026-09-24 the manifest pins
-  `RavenIronStudios-FireFront-1.0.2` (per-fire arson blame) while the store's newest is 1.0.1. Upload
-  FireFront 1.0.2 first, confirm `…/package/RavenIronStudios/FireFront/1.0.2/` answers 200 rather than
-  404, and only then upload this mod; a pin the store cannot resolve fails the install. Hexium DOES
+  also LEAD the store, and then the upload order is the gate:** on 2026-09-24 the manifest pinned
+  `RavenIronStudios-FireFront-1.0.2` (per-fire arson blame) while the store's newest was 1.0.1. Upload
+  FireFront first, confirm `…/package/RavenIronStudios/FireFront/<pin>/` answers 200 rather than
+  404, and only then upload this mod; a pin the store cannot resolve fails the install. (0.30.0 pins
+  1.0.4, which both stores already served with a 200 on 2026-11-17, so no ordering applies.) Hexium DOES
   list the current BepInExPack whatever the zip says — every Raven Iron listing reads 5.4.2350,
   including one uploaded before 5.4.2350 existed, so it resolves when it lists rather than on
   upload — and does NOT do that for any other dependency, which is why this one stayed wrong.
@@ -489,6 +496,24 @@ overlap if it is ever installed alongside.
 ---
 
 ## Current state
+
+**0.30.0 cut 2026-11-17 (pins FireFront 1.0.4, BepInExPack 5.4.2360; both live on Hexium and
+Thunderstore that day), packaged from a fresh clone, NOT uploaded.** Branch
+`feature/fiercer-storms-and-titles`, local, not pushed. Its contents were VERIFIED IN-GAME
+2026-11-17 on Storm10 (Valheim 1.0.20, FireFront 1.0.4, the `testing` Gale client):**
+- **ServerSync** handshake: both sides sent `Ragnarok's Wrath version 0.29.0 and minimum version
+  0.29.0`; the client logged `Received 138 configs … from the server`; an admin's Configuration
+  Manager edit reached the server (`Received 1 configs … from client`) and came back down.
+- **Forced storms**: `wrath storm start` forwarded the player's position; `stop` ended it.
+- **Live storm settings**: `sky off/on` and `size 1500/150` reached the RUNNING storm on server and
+  client ("the running storm included"). The first cut changed only the templates, because vanilla
+  runs an event from `ev.Clone()`; the owner caught it by eye ("the sky never changed").
+- **Realistic lightning**: every bolt that cleared the homestead standoff took a TREE, FireFront
+  caught each one, the client built the bolt material (`Sprites/Default`) and found vanilla's
+  ThunderStorm `Thunder`, and the owner confirmed by eye that it looks good. Close-strike DAMAGE was
+  not exercised (nobody stood within 8 m); natural bolts take the same path as `wrath storm strike`.
+- Still unverified: titles (`/wrath title`) beyond earning Stormrider, damage, and whether a
+  non-admin client's own file stays untouched under ServerSync (the admin's did change, via CM).
 
 **0.29.0 cut 2026-09-25: the wild answers a spawn war again**, the fix below, with the BepInExPack
 pin moved to 5.4.2351 (Hexium's current) and FireFront left at 1.0.2. Its code is the tested build's;

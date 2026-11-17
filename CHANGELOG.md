@@ -1,5 +1,127 @@
 # Changelog
 
+## 0.30.0 — 2026-11-17
+
+**Fiercer storms with real lightning, titles you choose, and the server's settings on every
+player's game.** Every player must update together: this version refuses any player on another
+version (see ServerSync below).
+
+**Storms are fiercer by default.** Three defaults change, and a server already running the old
+defaults moves to the new ones on its first start.
+
+- **`StormsForceWeather` is now on.** A storm shows its own stormy sky (a dark thunderstorm, or the
+  dry Eikthyr sky) instead of whatever the world's weather happens to be. The server's value now
+  reaches every player on its own (see "Every player gets the server's settings" below).
+- **`StormDurationSeconds` is now 600** (was 300): a storm lasts ten minutes.
+- **`LightningMeanMinutes` is now 4** (was 15): a dry storm gives about two to three bolts while a
+  player stands under it, where before most storms gave none. Wet storms still give none.
+- **Existing servers move too.** The config version goes 3 to 4. A setting still holding the old
+  default (`false`, `300`, `15`) is moved to the new one and the start-up log names each; any other
+  value is yours and stays. If you turned `StormsForceWeather` off on purpose, for example beside
+  another weather mod, set it back to `false` once after upgrading.
+
+### Every player gets the server's settings (ServerSync)
+
+44 of this mod's settings are read on each player's own game, not the server's: health, frost,
+farming, the whole Consequence section, the wildlife list, the nemesis, relics, and more. Until now a
+change on the server never reached them; every player had to edit their own file to match. Now the
+server's settings are sent to every player at login and whenever they change, through ServerSync.
+
+- **Every player must run exactly this version.** A player without Ragnarok's Wrath, or on any other
+  version, is refused when joining, with a message naming both versions. Update the server and every
+  player together.
+- **A player's own file is never overwritten.** Their game uses the server's values while connected
+  and goes back to its own file when they leave.
+- **New setting `LockConfiguration`** (main file, General, default on): only admins on
+  `adminlist.txt` may change the settings from a player's game, for instance in a configuration
+  manager, and such a change goes to the server and out to everyone. Players always get the server's
+  settings either way.
+- **What stays each player's own:** `VerboseLogging`, the visual dials (fog, frost breath, ash,
+  runes and their densities) and the config layout stamp. The zone-sync settings, though filed under
+  Visuals, are the server's and are synced.
+- `wrath status` now says where this machine's settings come from.
+
+### Lightning you can see, hear and feel
+
+A bolt used to be invisible: a fire and a line of text. Now each strike is a real one.
+
+- **The bolt is drawn** on every player's screen: a jagged, branching channel from the clouds to
+  whatever it hit, flickering through two to four return strokes the way real lightning does, with
+  a flash that lights up the trees and ground around it. Every player sees the same bolt.
+- **Thunder arrives at the speed of sound**: a crack at once when the strike is close, a rumble
+  seconds after the flash when it is far (about three seconds per kilometre). The flash and thunder
+  are the game's own thunderstorm effects; nothing new is added to the package.
+- **Bolts go for tall things**: a tree or a ridge within `LightningAttractMeters` (20 m) of where
+  the bolt was heading usually takes it, as real lightning does. The homestead standoff still
+  holds: no bolt ever lands near anything you built.
+- **Close strikes hurt** (`LightningHurtsPlayers`, on): within `LightningHurtRadiusMeters` (8 m) a
+  bolt deals up to `LightningDamage` (60) lightning damage and throws you back, a quarter of that
+  at half the distance. Lightning resistance helps, and a strike right beside a fresh character can
+  kill. Bolts still aim 15–40 m from a player, so a close strike is rare unless you stand by the
+  tallest tree around.
+- **Bolts strike in the rain too.** A thunderstorm that never threw lightning in the rain was the
+  least realistic thing about it. Rain now stops only the fire: a wet storm's bolts flash, thunder
+  and hurt like a dry one's, and start nothing.
+- The "Lightning splits the sky!" message is gone; the bolt says it.
+- `LightningBoltsEnabled` (Visuals, each player's own) turns the drawing off for one player;
+  strikes still happen and still hurt.
+
+### Force a storm
+
+- **`wrath storm start`** starts a storm now: where you stand when typed in game, on a random online
+  player from the server console. Add `dry` or `wet` to choose the look, and `x z` to place it.
+- **`wrath storm stop`** ends the storm now.
+- **`wrath storm strike`** throws one lightning bolt now, near a player under the storm. Every rule
+  of a natural bolt still applies (the homestead standoff, rain stopping the fire); only the wait
+  is skipped. The reply says what it hit.
+- Admins only, like the rest of `wrath`. A storm will not start over another event (a raid, a
+  merchant visit), because the game has one event slot and starting it would end the other; it says
+  so instead.
+
+### Packaging
+
+- FireFront pinned at **1.0.4** (was 1.0.2), the version this release was tested with. Its
+  reflected surfaces were checked by decompiling the 1.0.4 build. 1.0.4 is on both Hexium and
+  Thunderstore, so unlike 0.29.1 this version installs from both stores.
+
+### Choose your title
+
+Titles used to replace each other: whatever you earned last was the only one you had. Now every
+title you earn is kept, and you choose which one to wear.
+
+- **`/wrath title`** in chat (or `wrath title` in the console) lists the titles you have earned and
+  the one you wear. Any player can use it, not only admins, and it only ever changes your own title.
+- **`/wrath title <name>`** wears that title. It stays until you choose again, even when you earn a
+  new one; the new one is kept, and the announcement says you earned it rather than that you are it.
+- **`/wrath title auto`** goes back to wearing each new title as you earn it, which is the default.
+  **`/wrath title none`** wears no title.
+- **Upgrading:** the title each player wears today counts as earned, and nobody's choice changes
+  until they make one. Titles earned before this version were not recorded, so they are not in the
+  list.
+- If you roll back to an older version, everyone simply wears their latest earned title again; the
+  older version ignores the new parts of the file.
+- Only the server can hand out titles now. Before, a modified client could put one on anyone's
+  nameplate.
+
+### Storm settings change live
+
+Until now the storm's sky, length and reach were copied into the game once, when the world loaded,
+so changing them meant a full restart for every player. They now apply the moment they change.
+
+- **`wrath storm`** shows the settings in effect, and **`wrath storm set <name> <value>`** changes
+  one: `sky`, `duration`, `range`, `wetsky`, `drysky`, `drychance`, `lightning`, `lightningon`. It
+  is saved to the config, so it survives a restart. Typed in game it goes through the game's admin
+  list, like the rest of `wrath`. A value outside the allowed range is clamped and says so.
+- **Every player follows the server's sky, duration and range** (through ServerSync, above), and a
+  storm already running changes sky. A change made in a configuration manager does the same.
+- The lightning rate and the dry chance were always read when used, so they were already live.
+- **Storm size goes up to 5000 m** (was 1024): `wrath storm set size <metres>` sets the storm's
+  radius, live, including a storm already raging. Everything about a storm (the banner, the storm
+  sky, plague spread, the war's escalation, lightning) covers that same circle. The setting is
+  `StormRangeMeters` in the advanced file; its default stays 96 m. A bigger storm still throws about
+  the same number of bolts, each near a player inside it, so it covers more ground without striking
+  more often.
+
 ## 0.29.1 — 2026-11-01
 
 Updated due to the Valheim 1.0.21 patch. Rebuilt and checked against Valheim 1.0.21 (network

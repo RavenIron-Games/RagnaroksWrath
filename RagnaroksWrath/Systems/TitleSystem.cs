@@ -21,8 +21,9 @@ namespace RavenIron.RagnaroksWrath.Systems
     ///  - Plaguewalker: stood in a zone with plague at or past the spread threshold.
     ///  - Winterborn: a configurable stretch of time online through Winter.
     ///
-    /// One title per player, LATEST EARNED WINS — a title is where you have been lately, not a
-    /// trophy case. The Winterborn clock is in-memory and resets on restart, accepted for v1:
+    /// One title WORN per player. By default the latest earned wins — a title is where you have
+    /// been lately. Since 2026-11-17 every title earned is also kept, and a player can choose which
+    /// to wear (or none) with `wrath title`; a choice sticks until they change it. See TitleStore. The Winterborn clock is in-memory and resets on restart, accepted for v1:
     /// under-awarding a title is a shrug, double-awarding announcements is spam.
     /// </summary>
     public class TitleSystem : IWorldSystem
@@ -121,8 +122,10 @@ namespace RavenIron.RagnaroksWrath.Systems
                 // A newly appeared player gets the full title table replayed at them — their
                 // cache started empty, and a nameplate that shows titles only for people who
                 // earned one since you joined reads as broken.
+                // The WORN titles, not the latest earned: a player who chose one must not have
+                // their choice overwritten on everyone's screen each time somebody joins.
                 if (_knownOnline.Add(playerId))
-                    foreach (KeyValuePair<long, string> kv in TitleStore.All())
+                    foreach (KeyValuePair<long, string> kv in TitleStore.AllShown())
                         TitleSync.Broadcast(kv.Key, kv.Value);
 
                 // At most ONE award per player per tick: titles earned together resolve to the
@@ -178,17 +181,24 @@ namespace RavenIron.RagnaroksWrath.Systems
         {
             if (TitleStore.Get(playerId) == title) return;   // latest-earned already this
 
-            TitleStore.Set(playerId, title);
-            TitleSync.Broadcast(playerId, title);
+            string wornBefore = TitleStore.Shown(playerId);
+            TitleStore.Set(playerId, title);                  // also adds it to what they have earned
+            string worn = TitleStore.Shown(playerId);
+
+            // A player who chose a title keeps wearing it: the new one is earned and kept, and
+            // they can switch to it with `wrath title`. Only auto (the default) puts it on.
+            if (!string.Equals(wornBefore, worn, StringComparison.Ordinal))
+                TitleSync.Broadcast(playerId, worn ?? "");
 
             string name = zdo.GetString(ZDOVars.s_playerName, "");
-            RagnaroksWrath.Log.LogInfo($"[{Name}] {name} ({playerId}) earned {title}.");
+            RagnaroksWrath.Log.LogInfo($"[{Name}] {name} ({playerId}) earned {title}" +
+                (worn == title ? "." : $"; still wearing {worn ?? "nothing"} by choice."));
 
             // Reject the placeholder names the identity sheet warns about; an announcement
             // naming "Stranger" is worse than none.
             if (ModConfig.AnnounceTitles.Value
                 && !string.IsNullOrEmpty(name) && name != "Stranger" && name != "...")
-                MessageFeed.ToEveryone($"{name} is now {title}.");
+                MessageFeed.ToEveryone(worn == title ? $"{name} is now {title}." : $"{name} has earned {title}.");
         }
     }
 }

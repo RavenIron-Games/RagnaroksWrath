@@ -96,6 +96,11 @@ namespace RavenIron.RagnaroksWrath.Config
         public static ConfigEntry<float> LightningRingMaxMeters;
         public static ConfigEntry<float> LightningStandoffMeters;
         public static ConfigEntry<float> LightningIgniteRadiusMeters;
+        public static ConfigEntry<bool>  LightningHurtsPlayers;
+        public static ConfigEntry<float> LightningDamage;
+        public static ConfigEntry<float> LightningHurtRadiusMeters;
+        public static ConfigEntry<float> LightningAttractMeters;
+        public static ConfigEntry<bool>  LightningBoltsEnabled;
 
         // ---- Plague ---------------------------------------------------------------------
         public static ConfigEntry<float> PlagueSpreadIntervalSeconds;
@@ -330,24 +335,25 @@ namespace RavenIron.RagnaroksWrath.Config
                         "climbs from zero at the minimum gap to certain by this point.",
                         new AcceptableValueRange<float>(120f, 172800f)));
 
-                StormDurationSeconds = cfg.Bind(WeatherSection, "StormDurationSeconds", 300f,
+                StormDurationSeconds = cfg.Bind(WeatherSection, "StormDurationSeconds", 600f,
                     new ConfigDescription(
                         "How long a Devastating Storm lasts once it starts, in game seconds. It runs its full " +
                         "course and ends on schedule whether or not any player is nearby.",
                         new AcceptableValueRange<float>(30f, 3600f)));
 
-                StormsForceWeather = cfg.Bind(WeatherSection, "StormsForceWeather", false,
-                    "Gives a storm its own stormy sky instead of the world's weather. Left off, this mod " +
-                    "never touches the sky, avoiding a fight with another weather mod. Every player needs " +
-                    "the same value and a full restart to see it.");
+                StormsForceWeather = cfg.Bind(WeatherSection, "StormsForceWeather", true,
+                    "Gives a storm its own stormy sky instead of the world's weather, so a storm looks like " +
+                    "one. Turn it off to leave the sky entirely to the world's weather, for instance if " +
+                    "another weather mod misbehaves beside it. Changes apply live, and the server's value " +
+                    "is sent to every player.");
 
                 StormForcedEnvironment = cfg.Bind(WeatherSection, "StormForcedEnvironment", "ThunderStorm",
                     "The sky shown during a storm that rolls wet, used only when StormsForceWeather is on. " +
-                    "ThunderStorm is rainy, and rain stops storm lightning from striking.");
+                    "ThunderStorm is rainy: bolts still strike, but rain stops them starting fires.");
 
                 StormDryEnvironment = cfg.Bind(WeatherSection, "StormDryEnvironment", "Eikthyr",
                     "The sky shown during a storm that rolls dry, used only when StormsForceWeather is on. " +
-                    "Eikthyr is dark and thundery with no rain, so lightning can strike.");
+                    "Eikthyr is dark and thundery with no rain, so a bolt can start a fire.");
 
                 StormDryChance = cfg.Bind(WeatherSection, "StormDryChance", 0.5f,
                     new ConfigDescription(
@@ -368,11 +374,15 @@ namespace RavenIron.RagnaroksWrath.Config
                         "low on purpose, since this only reads state rather than computing anything heavy.",
                         new AcceptableValueRange<float>(1f, 60f)));
 
+                // Ceiling raised 1024 -> 5000 on 2026-11-17 at the owner's request, for admins who want
+                // a storm to cover a whole region. Every reader takes the radius off the running event
+                // (StormArea, the banner, the forced sky), so the size is one number end to end. A
+                // higher ceiling cannot move a stored value; a lower one would clamp it silently.
                 StormRangeMeters = advanced.Bind(WeatherSection, "StormRangeMeters", 96f,
                     new ConfigDescription(
-                        "Radius of a storm's effect, in metres. The on-screen banner and every gameplay effect " +
-                        "of the storm use this same distance, so they always agree on where it reaches.",
-                        new AcceptableValueRange<float>(32f, 1024f)));
+                        "Radius of a storm, in metres: how much ground it covers. The banner, the storm sky and " +
+                        "every gameplay effect use this same distance. Change it in game with wrath storm set size.",
+                        new AcceptableValueRange<float>(32f, 5000f)));
 
                 StormPlagueSpreadMultiplier = advanced.Bind(WeatherSection, "StormPlagueSpreadMultiplier", 1.5f,
                     new ConfigDescription(
@@ -438,15 +448,22 @@ namespace RavenIron.RagnaroksWrath.Config
                     "FireFront installed; does nothing without it.");
 
                 StormLightningEnabled = cfg.Bind(FireSection, "StormLightningEnabled", true,
-                    "Turns storm lightning on or off: a rare bolt during a Devastating Storm that can start " +
-                    "a fire nearby, never in rain. Needs FireFront installed with its own fire spread " +
-                    "enabled, or nothing happens.");
+                    "Turns storm lightning on or off: bolts during a Devastating Storm that strike tall " +
+                    "things, can hurt players close by, and start a fire unless it rains there. Needs " +
+                    "FireFront installed.");
 
-                LightningMeanMinutes = cfg.Bind(FireSection, "LightningMeanMinutes", 15f,
+                LightningMeanMinutes = cfg.Bind(FireSection, "LightningMeanMinutes", 4f,
                     new ConfigDescription(
-                        "Average minutes between lightning bolts while a storm holds at least one player under " +
-                        "a dry sky. Higher makes strikes rarer.",
+                        "Average minutes between lightning bolts while a storm holds at least one player. " +
+                        "Higher makes strikes rarer.",
                         new AcceptableValueRange<float>(1f, 600f)));
+
+                // Added 2026-11-17 with realistic lightning, at the owner's request. Read on each
+                // PLAYER's game: the damage is applied there, to the player's own character, which is
+                // the only place vanilla lets it be applied. ServerSync carries the server's value.
+                LightningHurtsPlayers = cfg.Bind(FireSection, "LightningHurtsPlayers", true,
+                    "A bolt that lands close to a player hurts and staggers them with lightning damage, " +
+                    "most at the strike point and nothing past LightningHurtRadiusMeters.");
 
                 // ---- 05 - Fire, advanced file ----
 
@@ -486,6 +503,23 @@ namespace RavenIron.RagnaroksWrath.Config
                         "Ground radius set alight at a lightning strike, in metres. Kept small on purpose — one " +
                         "bolt starts one fire, and the weather and land decide what it becomes.",
                         new AcceptableValueRange<float>(0.5f, 8f)));
+
+                LightningDamage = advanced.Bind(FireSection, "LightningDamage", 60f,
+                    new ConfigDescription(
+                        "Lightning damage to a player standing right where a bolt lands, before armour and " +
+                        "resistances. It falls off fast: a quarter at half the hurt radius.",
+                        new AcceptableValueRange<float>(0f, 1000f)));
+
+                LightningHurtRadiusMeters = advanced.Bind(FireSection, "LightningHurtRadiusMeters", 8f,
+                    new ConfigDescription(
+                        "How close to a strike, in metres, a player must be to be hurt by it.",
+                        new AcceptableValueRange<float>(0f, 30f)));
+
+                LightningAttractMeters = advanced.Bind(FireSection, "LightningAttractMeters", 20f,
+                    new ConfigDescription(
+                        "How far, in metres, a bolt reaches for the tallest thing around where it would land: " +
+                        "a tree, a ridge. 0 lands it where it was aimed, as before.",
+                        new AcceptableValueRange<float>(0f, 40f)));
 
                 // ==== 06 - Plague =====================================================================
 
@@ -1114,6 +1148,10 @@ namespace RavenIron.RagnaroksWrath.Config
                     "Client-side: drifts grey ash over badly burned ground on your own screen, thinning as " +
                     "the land heals. Separate from FireFront's own flames and scorched-ground marks, which " +
                     "are unaffected by this setting.");
+
+                LightningBoltsEnabled = cfg.Bind(VisualsSection, "LightningBoltsEnabled", true,
+                    "Draws each lightning strike on this player's screen: the bolt, its flash and its " +
+                    "thunder. Off, strikes still happen and still hurt; they are simply not drawn.");
 
                 RelicRunesEnabled = cfg.Bind(VisualsSection, "RelicRunesEnabled", true,
                     "Client-side: shows rune glyphs rising around standing relic stones on your own screen " +

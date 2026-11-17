@@ -17,7 +17,7 @@
   "StormDurationSeconds": "Only pausing the whole game in singleplayer stops this clock, the same as it stops every other clock in the game.",
   "StormRangeMeters": "",
   "StormPlagueSpreadMultiplier": "",
-  "StormsForceWeather": "The sky comes from StormForcedEnvironment (wet) or StormDryEnvironment (dry) for the length of the storm, through the same mechanism vanilla boss events use. Verified to work alongside Seasonality without conflict, though a different weather mod that forces the sky itself may still win. The sky is chosen when Valheim starts, so reconnecting after changing this does nothing - everyone needs to fully restart the game.",
+  "StormsForceWeather": "The sky comes from StormForcedEnvironment (wet) or StormDryEnvironment (dry) for the length of the storm, through the same mechanism vanilla boss events use. Verified to work alongside Seasonality without conflict, though a different weather mod that forces the sky itself may still win. A change applies live: the server pushes its value to every player, who follow it whatever their own file says, and a storm already running changes sky. Admins can change it in game with `wrath storm set sky on|off`.",
   "StormForcedEnvironment": "",
   "StormDryEnvironment": "Set this to the same value as StormForcedEnvironment if you would rather every storm looked the same again.",
   "StormDryChance": "Only visible when StormsForceWeather is on - with it off, both kinds run under the world's real sky and this roll changes nothing anyone can see. A dry sky is the warning that a storm can start fires.",
@@ -32,8 +32,12 @@
   "EnableFire": "FireFront, a separate mod, simulates the fire itself; this only reads where it is burning and records the scorch, which heals on its own over time. It also gates the storm lightning below, since that needs FireFront too.",
   "FireScorchIntervalSeconds": "",
   "FireScorchPerMinute": "This does not scale with the number of fires — a bigger fire already covers more zones, so counting fires too would double the effect. Scorch heals on its own over time, more slowly than it builds here.",
-  "StormLightningEnabled": "A bolt only ever lands near an online player, never within the homestead standoff below, and never where it is raining — including a storm forced to look rainy. If storms are forced to a wet look, set a dry environment there instead, or lightning will never strike.",
-  "LightningMeanMinutes": "Against the default 5-minute storm duration, the default here means roughly one storm in three produces a bolt — storms are meant to threaten fire, not guarantee it.",
+  "StormLightningEnabled": "A bolt only ever lands near an online player and never within the homestead standoff below. Each strike is drawn on every player's screen with its flash and with thunder that arrives late from far away, as real thunder does. Bolts strike in rain too, but rain stops them starting fires, including a storm forced to look rainy.",
+  "LightningMeanMinutes": "Against the default 10-minute storm, the default here gives a storm about two to three bolts while a player stands under it, so roughly nine storms in ten produce at least one. Only a dry storm's bolts can start fires.",
+  "LightningHurtsPlayers": "Every player gets the server's value. Off, bolts still strike, flash and thunder; they just never hurt anyone.",
+  "LightningDamage": "Lightning resistance (a mead, some armour) reduces it as for any lightning damage, and a bolt can kill.",
+  "LightningHurtRadiusMeters": "",
+  "LightningAttractMeters": "Trees are judged as about 14 m tall, scaled by their size, and the land by its generated height, which knows nothing of digging or raising. The tallest point usually wins but not always, as with real lightning.",
   "LightningRingMinMeters": "",
   "LightningRingMaxMeters": "",
   "LightningStandoffMeters": "",
@@ -145,7 +149,8 @@
   "FrostBreathFloor": "",
   "ScorchAshEnabled": "",
   "ScorchAshDensity": "",
-  "RelicRunesEnabled": ""
+  "RelicRunesEnabled": "",
+  "LightningBoltsEnabled": ""
  },
  "client": {
   "TickBudgetMs": false,
@@ -186,6 +191,10 @@
   "LightningRingMaxMeters": false,
   "LightningStandoffMeters": false,
   "LightningIgniteRadiusMeters": false,
+  "LightningHurtsPlayers": true,
+  "LightningDamage": true,
+  "LightningHurtRadiusMeters": true,
+  "LightningAttractMeters": false,
   "EnablePlague": false,
   "PlagueSpreadIntervalSeconds": false,
   "PlagueGrowthPerHour": false,
@@ -293,6 +302,7 @@
   "FrostBreathFloor": true,
   "ScorchAshEnabled": true,
   "ScorchAshDensity": true,
-  "RelicRunesEnabled": true
+  "RelicRunesEnabled": true,
+  "LightningBoltsEnabled": true
  }
 }

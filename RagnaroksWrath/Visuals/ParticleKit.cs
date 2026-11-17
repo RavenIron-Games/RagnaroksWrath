@@ -56,6 +56,27 @@ namespace RavenIron.RagnaroksWrath.Visuals
             return new Material(shader) { mainTexture = tex };
         }
 
+        /// <summary>
+        /// A lightning channel's material: bright down the middle, soft at the edges, and the SAME
+        /// all along its length, because a LineRenderer stretches the texture end to end and the
+        /// radial blob would fade the bolt out at both the cloud and the ground. Generated, not shipped.
+        /// </summary>
+        public static Material BuildBoltMaterial(string owner)
+        {
+            Shader shader = FindShader(owner);
+            const int w = 4, h = 32;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, mipChain: false) { wrapMode = TextureWrapMode.Clamp };
+            for (int y = 0; y < h; y++)
+            {
+                float d = Mathf.Abs((y + 0.5f) / h * 2f - 1f);   // 0 at the core, 1 at the edge
+                float a = Mathf.Clamp01(1f - d);
+                a = a * a * (3f - 2f * a);                        // smoothstep: a hot core, a soft halo
+                for (int x = 0; x < w; x++) tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+            tex.Apply();
+            return new Material(shader) { mainTexture = tex };
+        }
+
         /// <summary>The one place the candidate chain lives — see the class comment.</summary>
         private static Shader FindShader(string owner)
         {

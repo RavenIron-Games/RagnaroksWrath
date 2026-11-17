@@ -27,9 +27,10 @@ namespace RavenIron.RagnaroksWrath.Systems.World
     /// over a player under a dry sky may land a bolt nearby, and the bolt is a single call
     /// into FireFront's own ignition (`IgniteGroundNear`) — RW decides when and where,
     /// FireFront owns every consequence, so the "never a second fire sim" decision holds.
-    /// Lightning never fires in rain (FireFront's own suppression rule, honoured before a bolt is
-    /// announced, and since 0.28.0 judged where the bolt would land by FireFront's own reading of
-    /// the weather),
+    /// A bolt never starts a fire in rain (FireFront's own suppression rule, judged since 0.28.0
+    /// where the bolt lands by FireFront's own reading of the weather; since 2026-11-17 the bolt
+    /// itself still strikes, flashes and hurts in rain, as real lightning does, and only the fire
+    /// is withheld),
     /// never lands within the configured standoff of anything player-built, and only ever
     /// strikes near an ONLINE player — which is also what keeps the AwayFromHome promise:
     /// an unattended base cannot be reached by a bolt that only exists where players are.
@@ -133,6 +134,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
         public void Initialise()
         {
+            _live = this;
             _fireFrontPresent = Chainloader.PluginInfos.ContainsKey(FireFrontGuid);
 
             if (!_fireFrontPresent)
@@ -183,9 +185,13 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                     $"{ModConfig.LightningMeanMinutes.Value:0.#} storm-minutes, landing " +
                     $"{ModConfig.LightningRingMinMeters.Value:0}-{ModConfig.LightningRingMaxMeters.Value:0}m " +
                     $"from a present player, {ModConfig.LightningStandoffMeters.Value:0}m homestead standoff; " +
+                    $"each reaches {ModConfig.LightningAttractMeters.Value:0}m for the tallest tree or ridge, " +
+                    (ModConfig.LightningHurtsPlayers.Value
+                        ? $"hurts within {ModConfig.LightningHurtRadiusMeters.Value:0}m (up to {ModConfig.LightningDamage.Value:0} lightning); "
+                        : "hurts nobody; ") +
                     (forcedSky
-                        ? "rain judged by each storm's rolled look, since the sky is forced."
-                        : "rain judged where each bolt would land, by FireFront's reading of the world's weather."));
+                        ? "fire only under the dry look, since the sky is forced."
+                        : "fire only where FireFront reads no rain."));
 
                 if (!forcedSky && version < RainFireFrontVersion)
                     RagnaroksWrath.Log.LogWarning(
@@ -278,14 +284,39 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// not that fire caught: a bolt into rock or sand igniting nothing is honest
         /// weather, and FireFront's cell checks own that verdict.
         /// </summary>
+        // The live instance, for `wrath storm strike`. Systems are rebuilt per world.
+        private static FireSystem _live;
+        private bool _forcing;
+
+        /// <summary>
+        /// `wrath storm strike`: one bolt now, skipping only the dice. Every other rule a natural bolt
+        /// follows still applies (a storm, a player under it, the homestead standoff, rain stopping
+        /// the fire), so what it shows is exactly what a storm does, just sooner.
+        /// </summary>
+        public static bool TryForceStrike(out string message)
+        {
+            FireSystem live = _live;
+            if (live == null || !live._fireFrontPresent) { message = "lightning needs FireFront installed on the server."; return false; }
+            if (!ModConfig.StormLightningEnabled.Value) { message = "storm lightning is off (StormLightningEnabled = false)."; return false; }
+            if (!WeatherSystem.StormActive) { message = "no storm is raging; `wrath storm start` first."; return false; }
+            live._forcing = true;
+            try { live.TryLightning(); }
+            finally { live._forcing = false; }
+            message = live._lastStrikeNote ?? "the bolt found nobody under the storm to strike near.";
+            return live._lastStrikeNote != null;
+        }
+
+        private string _lastStrikeNote;
+
         private void TryLightning()
         {
+            _lastStrikeNote = null;
             if (!ModConfig.StormLightningEnabled.Value) return;
             if (!WeatherSystem.StormActive) return;
 
             float chance = LightningStrike.ChancePerTick(
                 IntervalSeconds, ModConfig.LightningMeanMinutes.Value);
-            if (_rng.NextDouble() > chance) return;
+            if (!_forcing && _rng.NextDouble() > chance) return;
 
             // Older FireFront only: its igniter is one global captured ONCE, so a bolt fire
             // would be billed to whoever lit the fire already burning. While an attributed fire
@@ -313,45 +344,162 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             if (_stormPlayers.Count == 0) return;   // a storm with nobody under it strikes nobody
 
             Vector3 anchor = _stormPlayers[_rng.Next(_stormPlayers.Count)].GetPosition();
-            Vector3 strike = LightningStrike.StrikePoint(
+            Vector3 aim = LightningStrike.StrikePoint(
                 anchor, _rng.NextDouble(), _rng.NextDouble(),
                 ModConfig.LightningRingMinMeters.Value, ModConfig.LightningRingMaxMeters.Value);
 
-            // The sky, judged where the bolt would land. Forced: the storm's rolled look. Not
-            // forced: the world's own weather at this spot as FireFront reads it — never
-            // EnvMan.IsWet(), which a dedicated server never updates (see
-            // LightningStrike.SkyAllows). Asked here rather than before the dice because
-            // unforced weather differs by place and only now is there a place to ask about.
-            // That costs the rate nothing: a bolt refused here is lost, as one refused earlier
-            // was.
-            bool forcedSky = ModConfig.StormsForceWeather.Value;
-            bool? raining = forcedSky ? (bool?)null : TryReadRainAt(strike);
-            if (!LightningStrike.SkyAllows(forcedSky, WeatherSystem.StormIsDry, raining))
-            {
-                if (ModConfig.VerboseLogging.Value)
-                    RagnaroksWrath.Log.LogInfo(
-                        $"[{Name}] bolt withheld at ({strike.x:F0}, {strike.z:F0}) — " +
-                        (forcedSky ? "the storm's forced sky is wet."
-                         : raining == true ? "FireFront reads rain there."
-                         : "FireFront cannot say whether it rains there."));
-                return;
-            }
+            // REAL LIGHTNING TAKES THE TALLEST THING NEAR WHERE IT WAS GOING (2026-11-17): a tree, a
+            // ridge. The server instantiates nothing, so it judges from what it does have: tree ZDOs
+            // around the aim point, and the world generator's terrain height. See FindTarget.
+            LightningStrike.Target target = FindTarget(aim, anchor.y, out bool tookTree);
+            Vector3 strike = target.Ground;
 
+            // The standoff is checked on the point the bolt TOOK, not the aim, because a bolt that
+            // reached for a tree beside a house must still never land at the house.
             if (IsNearPlayerBuilt(strike, ModConfig.LightningStandoffMeters.Value))
             {
-                if (ModConfig.VerboseLogging.Value)
+                _lastStrikeNote = $"the bolt was grounded by a homestead near ({strike.x:F0}, {strike.z:F0}) and lost; step farther from your builds.";
+                if (ModConfig.VerboseLogging.Value || _forcing)
                     RagnaroksWrath.Log.LogInfo(
                         $"[{Name}] bolt grounded by the homestead in {ZoneKey.FromWorldPos(strike)} — lost.");
                 return;
             }
 
-            if (!TryIgniteGround(strike, ModConfig.LightningIgniteRadiusMeters.Value)) return;
+            // The sky, judged where the bolt lands. Forced: the storm's rolled look. Not forced: the
+            // world's own weather at this spot as FireFront reads it, never EnvMan.IsWet(), which a
+            // dedicated server never updates (see LightningStrike.SkyAllows).
+            //
+            // Since 2026-11-17 RAIN STOPS THE FIRE, NOT THE BOLT. A thunderstorm that never threw
+            // lightning in the rain was the least realistic thing about it; now a wet storm's bolts
+            // strike, flash, thunder and hurt like a dry one's, and only the fire is withheld.
+            // FireFront would put a fire out in rain within seconds anyway; asking first keeps the
+            // log honest about why no fire caught.
+            bool forcedSky = ModConfig.StormsForceWeather.Value;
+            bool? raining = forcedSky ? (bool?)null : TryReadRainAt(strike);
+            bool fireMayCatch = LightningStrike.SkyAllows(forcedSky, WeatherSystem.StormIsDry, raining);
 
-            Feedback.MessageFeed.ToPlayersNear(strike, 64f, "Lightning splits the sky!",
-                Feedback.MessageFeed.Placement.Centre);
+            bool ignited = fireMayCatch && TryIgniteGround(strike, ModConfig.LightningIgniteRadiusMeters.Value);
+
+            // The strike, on every player's game: the bolt, the flash, the thunder, and the damage to
+            // whoever stood too close. The seed draws the same bolt for everyone.
+            Net.LightningSync.Broadcast(strike, target.Top, _rng.Next());
+
+            _lastStrikeNote = $"lightning struck {(tookTree ? "a tree" : "open ground")} at ({strike.x:F0}, {strike.z:F0})" +
+                              (ignited ? ", and it may burn." : ", and started no fire.");
             RagnaroksWrath.Log.LogInfo(
-                $"[{Name}] lightning strike at ({strike.x:F0}, {strike.z:F0}) in " +
-                $"{ZoneKey.FromWorldPos(strike)} — the fire, if any, is FireFront's now.");
+                $"[{Name}] lightning struck {(tookTree ? "a tree" : "open ground")} at ({strike.x:F0}, {strike.z:F0}) in " +
+                // Along the ground: aim carries the player's height and strike the tree's base, so a
+                // 3D distance once read "42 m" for a bolt that moved 20 (Storm10, 2026-11-17).
+                $"{ZoneKey.FromWorldPos(strike)}, {StormArea.DistanceXZ(aim, strike):F0} m from where it was aimed — " +
+                (ignited ? "the fire, if any, is FireFront's now."
+                 : !fireMayCatch ? (forcedSky ? "no fire: the storm's sky is wet." : raining == true ? "no fire: it rains there." : "no fire: FireFront cannot say whether it rains there.")
+                 : "no fire: FireFront's ignite call did not take."));
+        }
+
+        // Trees are judged by their prefab: whether it carries vanilla's TreeBase, cached per hash.
+        private readonly Dictionary<int, bool> _isTree = new Dictionary<int, bool>(32);
+        private readonly List<ZDO> _treeScratch = new List<ZDO>(256);
+        private readonly List<LightningStrike.Target> _targets = new List<LightningStrike.Target>(32);
+
+        // A standing tree's crown above its base. Valheim's beeches, oaks, pines and firs run from
+        // about 10 to 20 m at scale 1; 14 m is a fair middle, scaled by the tree's own size.
+        private const float TreeHeightMeters = 14f;
+        // How much lower a point may stand and still sometimes take the bolt (see ChooseTarget).
+        // 3 m, so a tree standing 13 m over the land around it takes ~92% of the bolts aimed near it.
+        private const float HeightPreferenceMeters = 3f;
+        private const int TerrainSamples = 6;
+
+        /// <summary>
+        /// The point a bolt aimed at <paramref name="aim"/> actually takes: every standing tree within
+        /// LightningAttractMeters, plus the terrain at the aim and at six points around it, each scored
+        /// by how high its top stands, the highest strongly favoured (LightningStrike.ChooseTarget).
+        ///
+        /// Terrain heights come from WorldGenerator, which is the generated land and knows nothing of a
+        /// player's digging or raising; on a server that is the only height there is (GetGroundHeight
+        /// returns its own input headless, the CLAUDE.md trap). Water is a flat surface at sea level,
+        /// so a bolt over water ends on the water. Any failure falls back to the aim, on the ground
+        /// height the player's own position gives, which is what every bolt used before this.
+        /// </summary>
+        private LightningStrike.Target FindTarget(Vector3 aim, float fallbackY, out bool tookTree)
+        {
+            tookTree = false;
+            var fallback = new LightningStrike.Target { Ground = new Vector3(aim.x, fallbackY, aim.z), Top = fallbackY };
+            float reach = ModConfig.LightningAttractMeters.Value;
+            if (reach <= 0f) return fallback;
+
+            try
+            {
+                _targets.Clear();
+                WorldGenerator world = WorldGenerator.instance;
+                ZoneSystem zones = ZoneSystem.instance;
+                float water = zones != null ? zones.m_waterLevel : 30f;
+
+                if (world != null)
+                {
+                    for (int i = 0; i <= TerrainSamples; i++)
+                    {
+                        float x = aim.x, z = aim.z;
+                        if (i > 0)
+                        {
+                            double a = (i - 1) * Math.PI * 2 / TerrainSamples + _rng.NextDouble() * 0.5;
+                            float r = reach * (0.4f + (float)_rng.NextDouble() * 0.6f);
+                            x += (float)Math.Cos(a) * r;
+                            z += (float)Math.Sin(a) * r;
+                        }
+                        float y = Mathf.Max(world.GetHeight(x, z), water);
+                        _targets.Add(new LightningStrike.Target { Ground = new Vector3(x, y, z), Top = y });
+                    }
+                }
+                else _targets.Add(fallback);
+
+                ZDOMan man = ZDOMan.instance;
+                ZNetScene scene = ZNetScene.instance;
+                if (man != null && scene != null)
+                {
+                    _treeScratch.Clear();
+                    man.FindSectorObjects(ZoneKey.FromWorldPos(aim).ToVector2s(),
+                                          new SimulationDistance(1, 0, classic: true), _treeScratch);
+                    float sqr = reach * reach;
+                    for (int i = 0; i < _treeScratch.Count; i++)
+                    {
+                        ZDO zdo = _treeScratch[i];
+                        if (zdo == null || !zdo.IsValid()) continue;
+                        Vector3 p = zdo.GetPosition();
+                        float dx = p.x - aim.x, dz = p.z - aim.z;
+                        if (dx * dx + dz * dz > sqr) continue;
+                        if (!IsTreePrefab(scene, zdo.GetPrefab())) continue;
+
+                        float scale = zdo.GetVec3(ZDOVars.s_scaleHash, Vector3.one).y;
+                        float scalar = zdo.GetFloat(ZDOVars.s_scaleScalarHash, 1f);
+                        float height = TreeHeightMeters * Mathf.Clamp(scale * scalar, 0.3f, 3f);
+                        _targets.Add(new LightningStrike.Target { Ground = p, Top = p.y + height, IsTree = true });
+                    }
+                }
+
+                int pick = LightningStrike.ChooseTarget(_targets, _rng.NextDouble(), HeightPreferenceMeters);
+                if (pick < 0) return fallback;
+                tookTree = _targets[pick].IsTree;
+                return _targets[pick];
+            }
+            catch (Exception ex)
+            {
+                RagnaroksWrath.Log.LogWarning($"[{Name}] could not look for tall targets, the bolt lands where it was aimed: {ex.Message}");
+                return fallback;
+            }
+        }
+
+        private bool IsTreePrefab(ZNetScene scene, int hash)
+        {
+            if (_isTree.TryGetValue(hash, out bool known)) return known;
+            bool tree = false;
+            try
+            {
+                GameObject prefab = scene.GetPrefab(hash);
+                tree = prefab != null && prefab.GetComponent<TreeBase>() != null;
+            }
+            catch { tree = false; }
+            _isTree[hash] = tree;
+            return tree;
         }
 
         /// <summary>

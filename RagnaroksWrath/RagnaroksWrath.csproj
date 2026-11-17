@@ -4,7 +4,7 @@
     <TargetFramework>net472</TargetFramework>
     <AssemblyName>RagnaroksWrath</AssemblyName>
     <RootNamespace>RavenIron.RagnaroksWrath</RootNamespace>
-    <Version>0.29.1</Version>
+    <Version>0.30.0</Version>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -12,6 +12,9 @@
     <Company>Raven Iron</Company>
     <Product>Ragnarok's Wrath</Product>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- Vendor\ServerSync.cs is blaxxun's file with nullable annotations; it compiles clean with these
+         two warnings turned down, as in Valkyrie's Cargo. Our own files carry no nullable syntax. -->
+    <NoWarn>$(NoWarn);CS8632;CS0618</NoWarn>
     <Deterministic>true</Deterministic>
     <!-- Keep the build machine's folders out of the shipped DLL. Without
          this the PE debug directory carries the absolute PDB path
@@ -75,6 +78,23 @@
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule">
       <HintPath>$(LibsDir)\UnityEngine.ParticleSystemModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- For the vendored ServerSync only: its connect-error patch writes FejdStartup's TMP text. -->
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(LibsDir)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(LibsDir)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(LibsDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(LibsDir)\UnityEngine.TextRenderingModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
 

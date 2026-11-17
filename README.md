@@ -2,7 +2,7 @@
 # ⛈️ Ragnarok's Wrath
 
 ![RAGNAROK'S WRATH](https://img.shields.io/badge/RAGNAROK%27S_WRATH-THE_LAND_REMEMBERS-c9a227?style=for-the-badge&labelColor=1b1b1b)
-![VERSION](https://img.shields.io/badge/VERSION-0.29.1-8b1e1e?style=for-the-badge&labelColor=1b1b1b)
+![VERSION](https://img.shields.io/badge/VERSION-0.30.0-8b1e1e?style=for-the-badge&labelColor=1b1b1b)
 ![CLIENT & SERVER](https://img.shields.io/badge/CLIENT_%26_SERVER-ONE_DLL_ON_BOTH-1f4e79?style=for-the-badge&labelColor=1b1b1b)
 
 > *The land remembers who walked it.*
@@ -15,14 +15,17 @@ There is no tracker, no dashboard, no HUD. The world tells you itself: a sickly 
 
 ---
 
-![NEW IN 0.29.1](https://img.shields.io/badge/NEW_IN_0.29.1-VALHEIM_1.0.21-8b1e1e?style=for-the-badge&labelColor=1b1b1b)
+![NEW IN 0.30.0](https://img.shields.io/badge/NEW_IN_0.30.0-STORMS_WITH_TEETH-8b1e1e?style=for-the-badge&labelColor=1b1b1b)
 
-**This version is the Valheim 1.0.21 build. Nothing else is new.**
+**Storms you can see, hear and feel, titles you choose, and one set of rules for everyone.**
 
 | You | It |
 |---|---|
-| **Play on Valheim 1.0.21** | the mod is rebuilt and checked against it; the gameplay is unchanged |
-| **Update the server and every player together** | Valheim 1.0.21 moved the game's network version to 41, so a server and its players must all be on the new game: update the mod on all of them at the same time |
+| **Get caught in a storm** | it has its own sky now, lasts ten minutes, and throws real lightning: a branching bolt, a flash, thunder that arrives late from far away. Bolts go for the tallest tree, start fires unless it rains, and hurt anyone standing too close |
+| **Earn a title** | every one is kept, and `/wrath title` lets you choose which to wear |
+| **Run the server** | admins start, stop and reshape storms from the console, live: their sky, length, size and lightning |
+| **Change the config** | the server's settings now reach every player on their own, through ServerSync |
+| **Update** | the server and every player together: a player on any other version is refused at the door |
 
 ---
 
@@ -30,9 +33,9 @@ There is no tracker, no dashboard, no HUD. The world tells you itself: a sickly 
 
 | | If… | Then… |
 |---|---|---|
-| 🤝 | you play on a **server** | install it on the server **and every player**: the same DLL does both jobs. A player whose version differs from the server's is warned once on screen, and features quietly stop showing until they match. |
+| 🤝 | you play on a **server** | install it on the server **and every player**: the same DLL does both jobs. Every player must run **exactly the server's version**, or the server turns them away with a message naming both. |
 | 🔥 | you install **by hand** | install **FireFront** (Raven Iron) too, and keep it current. Mod managers bring it for you. Without it, fire scars, arson and storm lightning sleep; everything else runs. |
-| ⚖️ | you change the **config** | give every player the same values as the server. Many gameplay settings act on each player's own game, so a player with a different file plays by different rules on the same world. The visual effects are the exception. |
+| ⚖️ | you change the **config** | change it on the server: every player gets the server's settings at login and whenever they change, and only admins can change them from in game. Each player keeps their own visual effects. |
 | ☁️ | you play single player on a **Steam Cloud** world | the land's memory lives beside the local save and does not travel with the cloud: move machines and the land starts fresh. Dedicated servers and local worlds are unaffected. |
 | 🧪 | you want to know **how finished it is** | every system is live and checked on a dedicated server, most rates to four decimal places against prediction, but it is an early, evolving mod. Report anything strange: the logs are chatty in all the right places. |
 
@@ -57,13 +60,16 @@ There is no tracker, no dashboard, no HUD. The world tells you itself: a sickly 
 |---|---|
 | ⛈️ **Positional** | a storm has an area: plague spreads faster inside it and nowhere else |
 | ⚔️ **It feeds the war** | a storm over contested ground escalates the fight beneath it |
-| ⚡ **It can strike** | with FireFront, a rare bolt lands near someone under the storm and starts a real fire: never in rain, never near anything player-built |
-| 🌤️ **The sky stays yours** | by default a storm never touches the sky, so it never fights your weather mod |
+| 🌩️ **Its own sky** | each storm rolls a rain-lashed thunderstorm or Eikthyr's dry, crackling dark, through the game's own event override; it works alongside Seasonality, and one setting hands the sky back to your weather mod |
+| ⚡ **Real lightning** | with FireFront: a jagged, branching bolt from the clouds, flickering through its return strokes, a flash that lights the trees, and thunder at the speed of sound, a crack overhead or a rumble seconds after a distant flash |
+| 🌲 **It finds the tallest thing** | a bolt goes for the highest tree or ridge near where it was heading, and never lands near anything player-built |
+| 🔥 **It burns and it hurts** | it starts a real fire unless it rains there, and anyone within a few metres takes lightning damage and is thrown back |
+| 🎛️ **Admins steer it** | `wrath storm start`, `stop`, `strike`, and `set` the sky, length, size (a radius up to 5 km) or lightning while it rages |
 
 <details>
-<summary>📖 <b>Read the saga</b> — giving a storm its own sky</summary>
+<summary>📖 <b>Read the saga</b> — wet storms and dry storms</summary>
 
-A server that runs no weather mod can turn on `StormsForceWeather`. Each storm then rolls wet or dry: the wet sky brings rain, which stops lightning; the dry sky is dark and thundery with no rain, and it is the warning that this storm can start fires. Every player needs the same value and a full restart of the game to see it.
+Each storm rolls wet or dry. The wet sky brings rain: its bolts strike, flash and hurt just the same, but start no fire. The dry sky is dark and thundery with no rain, and it is the warning that this storm can set the land alight. `StormDryChance` decides the mix. Changing the sky takes effect at once, on every player, even in a storm already raging.
 
 </details>
 
@@ -173,7 +179,7 @@ Player structures are never touched.
 | ⛈️ **Stormrider** · ☣️ **Plaguewalker** · ❄️ **Winterborn** | caught in a storm, stood in badly plagued ground, lived through Winter |
 | 🔥 **Ashbringer** · 🌿 **Warden** · 💀 **Despoiler** | lasting harm or care to the land |
 
-The latest title earned shows under your nameplate.
+Every title you earn is kept, and you choose which one shows under your nameplate: type `/wrath title` in chat to see yours, `/wrath title <name>` to wear one, `/wrath title auto` to wear each new one as you earn it (the default), or `/wrath title none`.
 
 ---
 
@@ -189,8 +195,13 @@ The latest title earned shows under your nameplate.
 | `wrath zone set x y field value` | set a zone's `fert`, `corr`, `scorch`, `frost` or `plague` | on the server (admin) |
 | `wrath care set x y playerId value` · `wrath harm set x y playerId value` | set one player's care or harm in a zone | on the server (admin) |
 | `wrath save` | write every store now | on the server (admin) |
+| `wrath title [name · auto · none]` | the titles you have earned, and which one you wear | anyone, for their own title (`/wrath title` in chat) |
+| `wrath storm` | the storm settings in effect | anywhere |
+| `wrath storm start [dry · wet] [x z]` · `wrath storm stop` | a storm now, where you stand, or end the one raging | on the server (admin) |
+| `wrath storm strike` | one lightning bolt now, near a player under the storm | on the server (admin) |
+| `wrath storm set name value` | `sky`, `duration`, `size`, `wetsky`, `drysky`, `drychance`, `lightning`, `lightningon`: saved, and live at once | on the server (admin) |
 
-Typed in game by an **admin**, the server commands go through vanilla's own admin gate, run where the world lives, and reply to your screen.
+Typed in game by an **admin**, the server commands go through vanilla's own admin gate, run where the world lives, and reply to your screen. Chat works too: start the line with `/`.
 
 <details>
 <summary>🛠️ <b>Fix a zone by hand</b></summary>
@@ -202,7 +213,7 @@ Stand in the zone and type `wrath zone` to read it, then `wrath zone set x y fie
 <details>
 <summary>🛠️ <b>Keep players on the same rules</b></summary>
 
-Copy the server's two config files to every player: `com.raveniron.ragnarokswrath.cfg` and `com.raveniron.ragnarokswrath.advanced.cfg`. The settings marked below as read on each player's own game must match the server; the visual effects need not.
+Nothing to do: ServerSync sends the server's settings to every player at login and again whenever one changes. A player's own file is never overwritten, and it comes back when they leave the server. With `LockConfiguration` on (the default), only admins on `adminlist.txt` can change the settings from in game, for instance in a configuration manager, and their change goes to the server and out to everyone. `wrath status` says where your game's settings are coming from.
 
 </details>
 
@@ -214,7 +225,7 @@ Copy the server's two config files to every player: `com.raveniron.ragnarokswrat
 |---|---|---|
 | no: install it on the server and every player | the simulation and every zone's memory · storms and outbreaks · relic stones · the world's condition and announcements · the server commands | the miasma, ash, frost breath and runes · sickness and chill · tired soil · the land's consequences · grudge-refused picking · spawn wars · the nemesis · relic auras |
 
-**Versions should match.** The server runs the simulation, and each player's game shows what it pushes and acts where that player stands. If the server and a player disagree about the mod's version, the player is warned once on screen; mismatched pairs fail safe, but features quietly stop showing until they match.
+**Versions must match.** The server runs the simulation, and each player's game shows what it pushes and acts where that player stands. A player without the mod, or on any other version, is refused when joining, with a message naming both versions, so update the server and every player together.
 
 ---
 
@@ -224,16 +235,16 @@ Copy the server's two config files to every player: `com.raveniron.ragnarokswrat
 |---|---|
 | **FireFront** | A listed dependency, installed with it by mod managers. It unlocks fire scars, arson by name and storm lightning. Removing it is safe: those systems simply sleep. |
 | **Seasonality · Seasons** (shudnal) | Found and used by themselves: their season drives the wrath, and it runs no clock of its own. |
-| **Weather mods** | A storm never touches the sky unless `StormsForceWeather` is on. |
+| **Weather mods** | A storm gives itself a sky through the game's own event override, which works alongside Seasonality. If another weather mod fights it, turn `StormsForceWeather` off and the storm leaves the sky alone. |
 | **AwayFromHome** | Deliberately compatible: drift never ticks on zone load state, unattended bases never burn, and sweeps are staggered off its rescan. |
 
-The mod adds **no prefabs, no assets, no bundles**: every visual is generated in code, on purpose.
+The mod adds **no prefabs, no assets, no bundles**: every visual is generated in code, and the thunder and sky flash are the game's own, on purpose.
 
 ---
 
 ![SETTINGS](https://img.shields.io/badge/SETTINGS-BEPINEX_CONFIG-b8860b?style=for-the-badge&labelColor=1b1b1b)
 
-Two files in `BepInEx/config/`. `com.raveniron.ragnarokswrath.cfg` holds every system's on/off switch and the settings most servers change; `com.raveniron.ragnarokswrath.advanced.cfg` holds the tuning (rates, thresholds, intervals and lists) under the same section names. Every setting has a plain description in the file. Close the game or server before editing; changes apply at the next start. **Nothing is synced:** each machine reads its own files.
+Two files in `BepInEx/config/`. `com.raveniron.ragnarokswrath.cfg` holds every system's on/off switch and the settings most servers change; `com.raveniron.ragnarokswrath.advanced.cfg` holds the tuning (rates, thresholds, intervals and lists) under the same section names. Every setting has a plain description in the file. Edit the files with the game or server closed, or change a setting while it runs with a configuration manager or `wrath storm set`. **The server's settings are everyone's:** they reach every player through ServerSync, except the visual effects and `VerboseLogging`, which each machine keeps for itself.
 
 <details>
 <summary>🔒 <b>On the server</b> — the server's own file decides</summary>
@@ -244,7 +255,8 @@ Two files in `BepInEx/config/`. `com.raveniron.ragnarokswrath.cfg` holds every s
 | 03 - Weather | `EnableWeather` · `StormMinIntervalSeconds` · `StormMaxIntervalSeconds` · `StormDurationSeconds` | Devastating Storms, the shortest and longest gap between them, and how long one lasts |
 | 03 - Weather | `StormDryChance` | the chance a storm rolls dry instead of wet |
 | 04 - Biome state | `EnableBiomeState` | each zone's slow drift and healing |
-| 05 - Fire | `EnableFire` · `StormLightningEnabled` · `LightningMeanMinutes` | scorch from FireFront's fires, storm lightning, and how rare a bolt is |
+| 01 - General | `LockConfiguration` | only admins may change the settings from in game |
+| 05 - Fire | `EnableFire` · `StormLightningEnabled` · `LightningMeanMinutes` | scorch from FireFront's fires, storm lightning, and how often a bolt falls |
 | 06 - Plague | `EnablePlague` · `PlagueGenesisEnabled` · `PlagueGenesisMeanHours` | the plague, outbreaks that start on their own, and how often |
 | 07 - Ecology | `EnableEcology` | land corruption |
 | 10 - Consequence | `AnnounceConsequences` | the one-line message when you enter sick ground |
@@ -256,13 +268,14 @@ Two files in `BepInEx/config/`. `com.raveniron.ragnarokswrath.cfg` holds every s
 </details>
 
 <details>
-<summary>🖥️ <b>On each player's own game</b> — keep the gameplay ones the same as the server</summary>
+<summary>🖥️ <b>On each player's own game</b> — the gameplay ones come from the server</summary>
 
-**The same on every player as on the server:**
+**Read on each player's game, and sent there from the server:**
 
 | Section | Settings |
 |---|---|
-| **03 - Weather** | `StormsForceWeather` · `StormForcedEnvironment` · `StormDryEnvironment` (a storm's own sky, wet and dry; needs a full restart) |
+| **03 - Weather** | `StormsForceWeather` · `StormForcedEnvironment` · `StormDryEnvironment` (a storm's own sky, wet and dry; changes at once, even mid-storm) |
+| **05 - Fire** | `LightningHurtsPlayers` · `LightningDamage` · `LightningHurtRadiusMeters` (who a bolt hurts, and how badly) |
 | **08 - Farming** | `EnableFarming` |
 | **09 - Health** | `EnableHealth` · `FrostChillEnabled` |
 | **10 - Consequence** | `EnableConsequence` · `ConsequenceBarren` · `ConsequenceEmpower` · `ConsequenceSicken` · `ConsequenceWither` |
@@ -273,7 +286,7 @@ Two files in `BepInEx/config/`. `com.raveniron.ragnarokswrath.cfg` holds every s
 
 | Section | Settings |
 |---|---|
-| **15 - Visuals** | `PlagueFogEnabled` · `FrostBreathEnabled` · `ScorchAshEnabled` · `RelicRunesEnabled` |
+| **15 - Visuals** | `PlagueFogEnabled` · `FrostBreathEnabled` · `ScorchAshEnabled` · `RelicRunesEnabled` · `LightningBoltsEnabled` |
 | **01 - General** | `VerboseLogging` (a log line for every pass of every system, on whichever machine turns it on) |
 
 </details>

@@ -27,6 +27,12 @@ namespace RavenIron.RagnaroksWrath.Net
             RelicSync.PlacedRpc.GetStableHashCode(),
             RelicSync.BrokenRpc.GetStableHashCode(),
             ZoneSync.RpcName.GetStableHashCode(),
+            // The server reads WHO chose a title from this packet's sender, so it must be real.
+            TitleSync.ChooseRpc.GetStableHashCode(),
+            TitleSync.ReplyRpc.GetStableHashCode(),
+            TitleSync.RpcName.GetStableHashCode(),
+            // A forged strike would hurt whoever stood near it.
+            LightningSync.RpcName.GetStableHashCode(),
         };
 
         // One warning per peer per session is enough to name a misbehaving client.
