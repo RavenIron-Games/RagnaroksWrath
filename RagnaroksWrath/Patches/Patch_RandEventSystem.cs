@@ -26,6 +26,11 @@ namespace RavenIron.RagnaroksWrath.Patches
             // fails to load.
             WeatherSystem.RegisterStormEvent(__instance);
 
+            // Arm the receiving end of StormSync here too, on every machine: a pure client's
+            // other arming path is a render loop, which a world with the visuals off never runs.
+            // Idempotent, and a no-op while the routed-RPC layer is not up yet.
+            try { Net.StormSync.EnsureRegistered(); } catch { }
+
             return true;
         }
     }

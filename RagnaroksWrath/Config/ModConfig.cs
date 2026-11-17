@@ -330,16 +330,17 @@ namespace RavenIron.RagnaroksWrath.Config
                         "climbs from zero at the minimum gap to certain by this point.",
                         new AcceptableValueRange<float>(120f, 172800f)));
 
-                StormDurationSeconds = cfg.Bind(WeatherSection, "StormDurationSeconds", 300f,
+                StormDurationSeconds = cfg.Bind(WeatherSection, "StormDurationSeconds", 600f,
                     new ConfigDescription(
                         "How long a Devastating Storm lasts once it starts, in game seconds. It runs its full " +
                         "course and ends on schedule whether or not any player is nearby.",
                         new AcceptableValueRange<float>(30f, 3600f)));
 
-                StormsForceWeather = cfg.Bind(WeatherSection, "StormsForceWeather", false,
-                    "Gives a storm its own stormy sky instead of the world's weather. Left off, this mod " +
-                    "never touches the sky, avoiding a fight with another weather mod. Every player needs " +
-                    "the same value and a full restart to see it.");
+                StormsForceWeather = cfg.Bind(WeatherSection, "StormsForceWeather", true,
+                    "Gives a storm its own stormy sky instead of the world's weather, so a storm looks like " +
+                    "one. Turn it off to leave the sky entirely to the world's weather, for instance if " +
+                    "another weather mod misbehaves beside it. Changes apply live, and the server's value " +
+                    "is sent to every player.");
 
                 StormForcedEnvironment = cfg.Bind(WeatherSection, "StormForcedEnvironment", "ThunderStorm",
                     "The sky shown during a storm that rolls wet, used only when StormsForceWeather is on. " +
@@ -442,7 +443,7 @@ namespace RavenIron.RagnaroksWrath.Config
                     "a fire nearby, never in rain. Needs FireFront installed with its own fire spread " +
                     "enabled, or nothing happens.");
 
-                LightningMeanMinutes = cfg.Bind(FireSection, "LightningMeanMinutes", 15f,
+                LightningMeanMinutes = cfg.Bind(FireSection, "LightningMeanMinutes", 4f,
                     new ConfigDescription(
                         "Average minutes between lightning bolts while a storm holds at least one player under " +
                         "a dry sky. Higher makes strikes rarer.",

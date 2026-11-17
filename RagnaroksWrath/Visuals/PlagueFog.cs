@@ -41,6 +41,7 @@ namespace RavenIron.RagnaroksWrath.Visuals
             {
                 ZoneSync.EnsureRegistered();   // the render path is where a pure client arms
                 SeasonSync.EnsureRegistered(); // and the season rides in on the same path
+                StormSync.EnsureRegistered();  // and so do the storm settings
 
                 if (!ModConfig.PlagueFogEnabled.Value) { SetEmission(0f); return; }
 

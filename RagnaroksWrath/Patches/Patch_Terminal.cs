@@ -80,6 +80,8 @@ namespace RavenIron.RagnaroksWrath.Patches
                     case "harm":   Column(args, care: false); return;
                     case "relics": Relics(args); return;
                     case "save":   SaveAll(args); return;
+                    case "storm":  Storm(args); return;
+                    case "title":  Title(args); return;
                     default:
                         args.Context.AddString(
                             "wrath status — world overview\n" +
@@ -89,6 +91,10 @@ namespace RavenIron.RagnaroksWrath.Patches
                             "wrath harm set <x> <y> <playerId> <value>\n" +
                             "wrath relics — peaks, stones, pending, era\n" +
                             "wrath save — flush every store now\n" +
+                            "wrath title — the titles you have earned and the one you wear (any player; /wrath title in chat)\n" +
+                            "wrath title <name> | auto | none — wear that title, follow new ones, or wear none\n" +
+                            "wrath storm — the storm settings in effect\n" +
+                            $"wrath storm set <name> <value> — live, saved to the config; names: {StormLive.AdminKeys}\n" +
                             "Mutations run on the authority; typed in-game they forward to the " +
                             "server through vanilla's admin gate (adminlist.txt).");
                         return;
@@ -274,6 +280,72 @@ namespace RavenIron.RagnaroksWrath.Patches
             if (RelicLedger.EraArmed) sb.Append("era: ARMED\n");
             if (sb.Length == 0) sb.Append("no peaks, no stones, no pending, era clear.");
             args.Context.AddString(sb.ToString().TrimEnd('\n'));
+        }
+
+        /// <summary>
+        /// `wrath title [name|auto|none]`: a player's OWN title. The one console command every
+        /// player may use, not only admins, because it can only ever touch the caller: the server
+        /// decides whose title it is from the connection, never from the text. Works from chat
+        /// (`/wrath title`), which needs no -console launch option. The answer comes back from the
+        /// server a moment later and is printed where the command was typed.
+        /// </summary>
+        private static void Title(Terminal.ConsoleEventArgs args)
+        {
+            ZNet znet = ZNet.instance;
+            if (znet == null)
+            {
+                args.Context.AddString("title: join a world first.");
+                return;
+            }
+            // No local character is the server console (or a loading screen). Asked rather than
+            // IsDedicated, which a build against the client reference DLLs reads as always false.
+            if (Player.m_localPlayer == null)
+            {
+                args.Context.AddString("title: there is no character here. Each player chooses their own with /wrath title in chat.");
+                return;
+            }
+
+            string choice = args.Args.Length > 2 ? string.Join(" ", args.Args, 2, args.Args.Length - 2) : "";
+            if (!TitleSync.RequestChoice(choice, args.Context))
+                args.Context.AddString("title: could not reach the server.");
+        }
+
+        /// <summary>
+        /// `wrath storm` shows what is in effect on THIS machine; `wrath storm set` changes it. A set
+        /// writes the config entry, so it is saved to the file and survives a restart, and the config
+        /// change is what pushes it into the live events and out to every client (see
+        /// <see cref="StormLive"/>). Mutations follow the same authority rule as the rest of the
+        /// console: typed on a pure client they forward through vanilla's admin gate.
+        /// </summary>
+        private static void Storm(Terminal.ConsoleEventArgs args)
+        {
+            if (args.Args.Length >= 3 && args.Args[2].ToLowerInvariant() == "set")
+            {
+                if (!Authority)
+                {
+                    if (!TryForward(args))
+                        args.Context.AddString("wrath: mutations run on the authority only (server console or listen host).");
+                    return;
+                }
+                if (args.Args.Length < 5)
+                {
+                    args.Context.AddString($"usage: wrath storm set <name> <value>  (names: {StormLive.AdminKeys})");
+                    return;
+                }
+                // Anything after the name is the value, so a sky name with spaces would still arrive whole.
+                string value = string.Join(" ", args.Args, 4, args.Args.Length - 4);
+                bool ok = StormLive.TrySet(args.Args[3], value, out string message);
+                args.Context.AddString(ok ? "storm: " + message + " (saved; live now)." : "storm: " + message);
+                if (ok) RagnaroksWrath.Log.LogInfo($"wrath storm set {args.Args[3]} {value}: {message}");
+                return;
+            }
+
+            bool fromServer = !Authority && StormLive.HasServerValue;
+            StormLive.Settings effective = StormLive.Effective(Authority);
+            string text = StormLive.Describe(effective, fromServer);
+            if (!Authority && !StormLive.HasServerValue)
+                text += "\n(this machine has not heard from the server: these are its own config's values)";
+            args.Context.AddString(text);
         }
 
         private static void SaveAll(Terminal.ConsoleEventArgs args)

@@ -57,7 +57,7 @@ namespace RavenIron.RagnaroksWrath.Core
     {
         public const string MetaSection = "Meta";
         public const string VersionKey = "ConfigVersion";
-        public const int CurrentVersion = 3;
+        public const int CurrentVersion = 4;
 
         /// <summary>Marks a slot as living in the advanced file rather than the main one.</summary>
         public const string AdvancedPrefix = "advanced|";
@@ -106,8 +106,41 @@ namespace RavenIron.RagnaroksWrath.Core
             public string Because;
         }
 
-        /// <summary>Keyed by the version the step produces: <c>Rebases[n]</c> takes a file at n-1 up to n.</summary>
-        private static readonly Dictionary<int, Rebase[]> Rebases = new Dictionary<int, Rebase[]>();
+        /// <summary>
+        /// Keyed by the version the step produces: <c>Rebases[n]</c> takes a file at n-1 up to n.
+        ///
+        /// Version 4 makes storms fiercer: the forced storm sky ships ON, a storm lasts 600 s rather
+        /// than 300, and a bolt falls about every 4 minutes rather than 15. BepInEx writes every
+        /// default into the file, so an owner who never touched these still holds the old values
+        /// explicitly, and a changed default alone would reach nobody but new installs. A stored value
+        /// equal to the old default is the mod's, not the owner's, and moves; anything else is a
+        /// choice and stays. The one cost is an owner who turned the forced sky off on purpose to
+        /// keep another weather mod happy: that value IS the old default, so it moves too, and the
+        /// boot line names it. Main-file keys only: a rebase names a section and key, which can only
+        /// mean the main file.
+        /// </summary>
+        private static readonly Dictionary<int, Rebase[]> Rebases = new Dictionary<int, Rebase[]>
+        {
+            { 4, new[]
+                {
+                    new Rebase
+                    {
+                        Section = "03 - Weather", Key = "StormsForceWeather", OldDefaults = new[] { "false" },
+                        Because = "storms now show their own stormy sky by default; set it back to false to leave the sky to the world's weather",
+                    },
+                    new Rebase
+                    {
+                        Section = "03 - Weather", Key = "StormDurationSeconds", OldDefaults = new[] { "300" },
+                        Because = "storms now last 10 minutes by default",
+                    },
+                    new Rebase
+                    {
+                        Section = "05 - Fire", Key = "LightningMeanMinutes", OldDefaults = new[] { "15" },
+                        Because = "lightning now falls about every 4 minutes by default",
+                    },
+                }
+            },
+        };
 
         /// <summary>
         /// Version 1. Before it, every Devastating Storm wore the single `StormForcedEnvironment`

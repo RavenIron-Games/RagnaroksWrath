@@ -5,6 +5,7 @@ using UnityEngine;
 using RavenIron.RagnaroksWrath.Config;
 using RavenIron.RagnaroksWrath.Core;
 using RavenIron.RagnaroksWrath.Feedback;
+using RavenIron.RagnaroksWrath.Net;
 
 namespace RavenIron.RagnaroksWrath.Systems.World
 {
@@ -89,6 +90,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         public static bool IsStormEvent(string eventName) => StormLook.IsStorm(eventName);
 
         private float _sinceStormEnded;
+        private float _sinceStormSync;
         private readonly System.Random _rng = new System.Random();
 
         // Wild-anchor machinery (0.26.0): scratch for Homestead's sector scan, the
@@ -156,6 +158,18 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             // copy of the world and nowhere else - the same failure shape as a console command
             // executing where it was typed.
             if (!RagnaroksWrath.IsSimulationAuthority()) return;
+
+            // Tell every client the storm settings, on a slow cadence whether or not anything
+            // changed (a change broadcasts at once, from RefreshStormEvents). That is what brings
+            // a player who just joined into line. Before the storm logic so a running storm and
+            // an empty sky are treated alike.
+            StormSync.EnsureRegistered();
+            _sinceStormSync += deltaSeconds;
+            if (_sinceStormSync >= StormSync.IntervalSeconds)
+            {
+                _sinceStormSync = 0f;
+                StormSync.Broadcast(StormLive.FromConfig());
+            }
 
             if (StormActive)
             {
@@ -280,6 +294,74 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             RegisterOne(system, StormDryEventName, Wet: false);
         }
 
+        private static bool _lastPushLogged;
+
+        /// <summary>
+        /// Push the storm settings in effect on this machine into the two registered events, in
+        /// place. This is what makes the sky, the duration and the range LIVE: the events were
+        /// built once at world load, and a storm already running holds a reference to the same
+        /// object, so it changes mid-storm too (EnvMan asks the active event for its forced sky
+        /// each time it picks an environment; the event's own timer reads the duration each frame).
+        ///
+        /// Called when a baked setting changes (a config edit, the `wrath storm` command, a
+        /// configuration manager) and when the server's values arrive on a client. Walks the public
+        /// `m_events` list rather than vanilla's private lookup (rule 5), touches nothing but our two
+        /// names, and does nothing when the world has no event system yet: the next registration
+        /// reads the same settings. The authority also tells every client at once.
+        /// </summary>
+        public static void RefreshStormEvents()
+        {
+            try
+            {
+                bool authority = RagnaroksWrath.IsSimulationAuthority();
+                StormLive.Settings live = StormLive.Effective(authority);
+
+                RandEventSystem system = RandEventSystem.instance;
+                if (system != null && system.m_events != null)
+                {
+                    int changed = 0;
+                    foreach (RandomEvent ev in system.m_events)
+                    {
+                        if (ev == null || !StormLook.IsStorm(ev.m_name)) continue;
+
+                        string sky = StormLive.SkyFor(live, ev.m_name == StormEventName);
+                        if (Math.Abs(ev.m_duration - live.Duration) > 0.001f ||
+                            Math.Abs(ev.m_eventRange - live.Range) > 0.001f ||
+                            !string.Equals(ev.m_forceEnvironment, sky, StringComparison.Ordinal))
+                        {
+                            ev.m_duration = live.Duration;
+                            ev.m_eventRange = live.Range;
+                            ev.m_forceEnvironment = sky;
+                            changed++;
+                        }
+                    }
+
+                    if (changed > 0)
+                        RagnaroksWrath.Log.LogInfo(
+                            $"[WeatherSystem] storm settings now live on {changed} event(s): " +
+                            $"{(live.Force ? $"sky wet '{live.WetSky}' / dry '{live.DrySky}'" : "no sky forced")}, " +
+                            $"duration {live.Duration:F0}s, range {live.Range:F0}m" +
+                            (!authority && StormLive.HasServerValue ? " (from the server)." : "."));
+                }
+
+                // Tell the clients now rather than at the next cadence. Safe when nobody listens.
+                if (authority)
+                {
+                    StormSync.EnsureRegistered();
+                    StormSync.Broadcast(live);
+                }
+            }
+            catch (Exception ex)
+            {
+                // A failed refresh must never take a config edit or a packet handler down with it.
+                if (!_lastPushLogged)
+                {
+                    _lastPushLogged = true;
+                    RagnaroksWrath.Log.LogWarning($"[WeatherSystem] could not push storm settings: {ex.Message}");
+                }
+            }
+        }
+
         /// <param name="Wet">
         /// Which of the two looks this event carries. It selects a config key, nothing more: with
         /// StormsForceWeather off BOTH events force nothing and the distinction is invisible,
@@ -291,6 +373,11 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             {
                 if (system.HaveEvent(name)) return;
 
+                // The values this machine's events should carry: its own config on the authority,
+                // the server's word on a client that has heard it. Since 0.30.0 they are pushed
+                // into the live events by RefreshStormEvents whenever they change.
+                StormLive.Settings live = StormLive.Effective(RagnaroksWrath.IsSimulationAuthority());
+
                 var storm = new RandomEvent
                 {
                     m_name = name,
@@ -300,8 +387,8 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                     // Two schedulers for one event would double the rate and neither would know.
                     m_random = false,
 
-                    m_duration = ModConfig.StormDurationSeconds.Value,
-                    m_eventRange = ModConfig.StormRangeMeters.Value,
+                    m_duration = live.Duration,
+                    m_eventRange = live.Range,
 
                     // A storm is weather, not a raid: it should reach wilderness, not only bases.
                     m_nearBaseOnly = false,
@@ -322,10 +409,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                     // THE LOCKED DECISION, in one line. Empty means the event runs with the
                     // player's real sky: full vanilla event, no environment override, no fight
                     // with Seasonality. The config below is the only thing that may fill it.
-                    m_forceEnvironment = ModConfig.StormsForceWeather.Value
-                        ? (Wet ? ModConfig.StormForcedEnvironment.Value
-                               : ModConfig.StormDryEnvironment.Value)
-                        : "",
+                    m_forceEnvironment = StormLive.SkyFor(live, Wet),
                 };
 
                 system.m_events.Add(storm);

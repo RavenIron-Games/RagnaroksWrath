@@ -41,6 +41,20 @@ namespace RavenIron.RagnaroksWrath
             return znet != null && znet.IsDedicated();
         }
 
+        private static void OnStormSettingChanged(object sender, BepInEx.Configuration.SettingChangedEventArgs e)
+        {
+            try
+            {
+                if (e?.ChangedSetting == null) return;
+                if (Core.StormLive.IsBakedKey(e.ChangedSetting.Definition.Key))
+                    Systems.World.WeatherSystem.RefreshStormEvents();
+            }
+            catch (System.Exception ex)
+            {
+                Log.LogWarning($"storm settings: could not apply a change live: {ex.Message}");
+            }
+        }
+
         private void Awake()
         {
             Instance = this;
@@ -52,6 +66,14 @@ namespace RavenIron.RagnaroksWrath
             var advancedConfig = new BepInEx.Configuration.ConfigFile(
                 System.IO.Path.Combine(Paths.ConfigPath, ConfigLedger.AdvancedFileName), false, Info.Metadata);
             ModConfig.Bind(base.Config, advancedConfig);
+
+            // Live storm settings (0.30.0). The sky, duration and range are copied into vanilla's
+            // storm events, so a change has to be pushed into them. Hooked AFTER Bind so the
+            // migration's own writes do not count as an owner's edit. Both files: the range lives
+            // in the advanced one. Fires for a configuration manager, `wrath storm set` and a
+            // config reload alike.
+            base.Config.SettingChanged += OnStormSettingChanged;
+            advancedConfig.SettingChanged += OnStormSettingChanged;
 
             _harmony = new Harmony(PluginId);
             _harmony.PatchAll();

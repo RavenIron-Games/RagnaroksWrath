@@ -39,6 +39,7 @@ namespace RagnaroksWrath.Tests
             BiomeStateTests();
             StormAreaTests();
             StormLookTests();
+            StormLiveTests();
             ConfigLedgerTests();
             WindStateTests();
             FireScorchTests();
@@ -1070,6 +1071,9 @@ namespace RagnaroksWrath.Tests
             {
                 if (b == ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey)) continue;
                 if (destinations.Contains(b)) continue;
+                // A setting that held its old shipped default is reset to the new one (version 4's
+                // rebase) instead of carried, so it arrives by that route.
+                if (plan.ResetToDefault.Contains(b)) continue;
                 if (old.ContainsKey(b) && !plan.Dropped.Exists(d => d.Slot == b)) { stayed++; continue; }
                 everyBoundReached = false;
                 Console.WriteLine("      bound but never carried to: " + b);
@@ -1106,7 +1110,39 @@ namespace RagnaroksWrath.Tests
             Check("while the spawn war's chance, which still means something, is carried",
                 plan.Moved.Exists(m => m.From == ConfigLedger.Slot("17 - Rivalry", "ContestWildSpawnChance") &&
                                        m.To == ConfigLedger.AdvancedSlot(ModConfig.RivalrySection, "ContestWildSpawnChance")));
-            Check("a layout move changes where values live, not how the world behaves", !plan.ChangesBehaviour);
+            // Version 4 moves three settings that still hold their old shipped default to the new one
+            // (fiercer storms), so this fixture, written by 0.27.5 with those defaults, now changes
+            // behaviour on exactly those three and nothing else. The layout move itself still doesn't.
+            Check("a layout move changes where values live; only the fiercer-storm rebase changes how the world behaves",
+                plan.ChangesBehaviour && plan.Backfilled.Count == 0 && plan.Relocated.Count == 0 &&
+                plan.ResetToDefault.Count > 0 && plan.ResetToDefault.TrueForAll(s =>
+                    s == ConfigLedger.Slot("03 - Weather", "StormsForceWeather") ||
+                    s == ConfigLedger.Slot("03 - Weather", "StormDurationSeconds") ||
+                    s == ConfigLedger.Slot("05 - Fire", "LightningMeanMinutes")));
+
+            // VERSION 4, the fiercer-storm rebase, on a file already in the current layout (version 3).
+            string sForce = ConfigLedger.Slot("03 - Weather", "StormsForceWeather");
+            string sDur = ConfigLedger.Slot("03 - Weather", "StormDurationSeconds");
+            string sBolt = ConfigLedger.Slot("05 - Fire", "LightningMeanMinutes");
+            var oldStormDefaults = new Dictionary<string, string>
+            {
+                { sForce, "false" }, { sDur, "300" }, { sBolt, "15" },
+                { ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), "3" },
+            };
+            var p4 = ConfigLedger.Plan(oldStormDefaults, 3);
+            Check("a version 3 file still on the old storm defaults moves all three to the new ones",
+                p4.ResetToDefault.Count == 3 && p4.ResetToDefault.Contains(sForce) &&
+                p4.ResetToDefault.Contains(sDur) && p4.ResetToDefault.Contains(sBolt) && p4.ChangesBehaviour);
+
+            var chosen4 = new Dictionary<string, string>
+            {
+                { sForce, "true" }, { sDur, "900" }, { sBolt, "7" },
+                { ConfigLedger.Slot(ConfigLedger.MetaSection, ConfigLedger.VersionKey), "3" },
+            };
+            var p4kept = ConfigLedger.Plan(chosen4, 3);
+            Check("an owner's own storm values are kept, not reset",
+                p4kept.ResetToDefault.Count == 0 && p4kept.Kept.Count == 3 && !p4kept.ChangesBehaviour);
+            Check("a file already at version 4 is left alone", ConfigLedger.Plan(oldStormDefaults, 4).IsEmpty);
 
             // BepInEx writes sections sorted by NAME. The whole point of the renumbering is that the
             // sort now IS the intended order; a single-digit number anywhere would undo it.
@@ -1439,7 +1475,9 @@ namespace RagnaroksWrath.Tests
                     ConfigLedger.SplitSlot(m.To, out bool toAdv, out string toSection, out _);
                     var probeEntry = (ConfigEntryBase)(toAdv ? advProbe : mainProbe)[new ConfigDefinition(toSection, key)];
                     string text = NotTheDefault(probeEntry);
-                    chosen[m.To] = text;
+                    // StormsForceWeather's only non-default value is its OLD default, which version 4
+                    // deliberately resets to the new one. So write the old default and expect the reset.
+                    chosen[m.To] = (key == "StormsForceWeather") ? "true" : text;
                     if (fromSection != lastSection) { synthetic.Add("[" + fromSection + "]"); lastSection = fromSection; }
                     synthetic.Add(key + " = " + text);
                 }
@@ -1605,6 +1643,98 @@ namespace RagnaroksWrath.Tests
             return description?.Description ?? "";
         }
 
+
+        // ---- StormLive --------------------------------------------------------------
+
+        private static void StormLiveTests()
+        {
+            Console.WriteLine("\nStormLive");
+            ModConfig.Bind(new ConfigFile(), new ConfigFile());   // fresh defaults; restored at the end
+            try
+            {
+                StormLive.ForgetServer();
+
+                var cfg = StormLive.FromConfig();
+                Check("the shipped storm now forces its sky, lasts 600 s and reaches 96 m",
+                    cfg.Force && Math.Abs(cfg.Duration - 600f) < 0.01f && Math.Abs(cfg.Range - 96f) < 0.01f);
+                Check("a forced sky gives the wet look its wet sky and the dry look its dry one",
+                    StormLive.SkyFor(cfg, wet: true) == "ThunderStorm" && StormLive.SkyFor(cfg, wet: false) == "Eikthyr");
+                var off = cfg; off.Force = false;
+                Check("with no sky forced both looks carry an EMPTY environment (rule 4)",
+                    StormLive.SkyFor(off, true) == "" && StormLive.SkyFor(off, false) == "");
+
+                // Who is believed.
+                var theirs = new StormLive.Settings { Force = false, Duration = 90f, Range = 200f, WetSky = "Rain", DrySky = "Clear" };
+                Check("a client that has not heard from the server uses its own config",
+                    !StormLive.Effective(isAuthority: false).Equals(default(StormLive.Settings)) &&
+                    StormLive.Effective(false).Force && Math.Abs(StormLive.Effective(false).Duration - 600f) < 0.01f);
+                Check("the server's snapshot is accepted", StormLive.AcceptFromServer(theirs) && StormLive.HasServerValue);
+                Check("a client then follows the server, not its own config",
+                    !StormLive.Effective(false).Force && Math.Abs(StormLive.Effective(false).Duration - 90f) < 0.01f &&
+                    StormLive.Effective(false).WetSky == "Rain");
+                Check("the authority NEVER follows a packet, only its own config",
+                    StormLive.Effective(true).Force && Math.Abs(StormLive.Effective(true).Duration - 600f) < 0.01f);
+                StormLive.ForgetServer();
+                Check("a new world session forgets the old server's word",
+                    !StormLive.HasServerValue && StormLive.Effective(false).Force);
+
+                // A packet from the network is not trusted.
+                Check("a NaN duration is refused outright, not clamped to something nobody sent",
+                    !StormLive.AcceptFromServer(new StormLive.Settings { Duration = float.NaN, Range = 96f }) && !StormLive.HasServerValue);
+                Check("an infinite range is refused",
+                    !StormLive.AcceptFromServer(new StormLive.Settings { Duration = 600f, Range = float.PositiveInfinity }));
+                StormLive.AcceptFromServer(new StormLive.Settings { Force = true, Duration = 1f, Range = 99999f, WetSky = null, DrySky = new string('x', 500) });
+                var clamped = StormLive.Effective(false);
+                Check("an absurd duration and range are clamped into the legal band",
+                    Math.Abs(clamped.Duration - StormLive.MinDuration) < 0.01f && Math.Abs(clamped.Range - StormLive.MaxRange) < 0.01f);
+                Check("a missing sky name becomes empty and a huge one is cut short",
+                    clamped.WetSky == "" && clamped.DrySky.Length == StormLive.MaxSkyNameLength);
+                StormLive.AcceptFromServer(theirs);
+                Check("a refused snapshot leaves the last good one in place",
+                    !StormLive.AcceptFromServer(new StormLive.Settings { Duration = float.NaN, Range = 96f }) &&
+                    Math.Abs(StormLive.Effective(false).Duration - 90f) < 0.01f);
+                StormLive.ForgetServer();
+
+                Check("Differs sees a changed sky, duration or range and ignores float dust",
+                    StormLive.Differs(cfg, off) &&
+                    StormLive.Differs(cfg, new StormLive.Settings { Force = true, Duration = 601f, Range = 96f, WetSky = "ThunderStorm", DrySky = "Eikthyr" }) &&
+                    !StormLive.Differs(cfg, new StormLive.Settings { Force = true, Duration = 600.0001f, Range = 96f, WetSky = "ThunderStorm", DrySky = "Eikthyr" }));
+
+                // Which config keys need a push into the events.
+                Check("exactly the five baked keys need pushing, and the live-read ones do not",
+                    StormLive.IsBakedKey("StormsForceWeather") && StormLive.IsBakedKey("StormDurationSeconds") &&
+                    StormLive.IsBakedKey("StormRangeMeters") && StormLive.IsBakedKey("StormForcedEnvironment") &&
+                    StormLive.IsBakedKey("StormDryEnvironment") &&
+                    !StormLive.IsBakedKey("LightningMeanMinutes") && !StormLive.IsBakedKey("StormDryChance"));
+
+                // The console.
+                Check("`storm set sky off` turns the forced sky off through the config entry",
+                    StormLive.TrySet("sky", "off", out string m1) && !ModConfig.StormsForceWeather.Value && m1.Contains("off"));
+                Check("and `on` turns it back", StormLive.TrySet("SKY", "On", out _) && ModConfig.StormsForceWeather.Value);
+                Check("`storm set duration 900` changes the duration",
+                    StormLive.TrySet("duration", "900", out string m2) && Math.Abs(ModConfig.StormDurationSeconds.Value - 900f) < 0.01f && m2.Contains("900"));
+                Check("an out-of-range value is reported as CLAMPED, not as what was typed",
+                    StormLive.TrySet("duration", "999999", out string m3) && Math.Abs(ModConfig.StormDurationSeconds.Value - 3600f) < 0.01f &&
+                    m3.Contains("3600") && m3.Contains("clamped"));
+                Check("`storm set lightning 2` and `drychance 0.8` reach their entries",
+                    StormLive.TrySet("lightning", "2", out _) && Math.Abs(ModConfig.LightningMeanMinutes.Value - 2f) < 0.01f &&
+                    StormLive.TrySet("drychance", "0.8", out _) && Math.Abs(ModConfig.StormDryChance.Value - 0.8f) < 0.001f);
+                Check("a sky name with surrounding space is trimmed",
+                    StormLive.TrySet("drysky", "  Eikthyr ", out _) && ModConfig.StormDryEnvironment.Value == "Eikthyr");
+                Check("a number setting given a word is refused and changes nothing",
+                    !StormLive.TrySet("duration", "soon", out string m4) && Math.Abs(ModConfig.StormDurationSeconds.Value - 3600f) < 0.01f && m4.Contains("number"));
+                Check("an unknown name is refused with the list of real ones",
+                    !StormLive.TrySet("thunder", "1", out string m5) && m5.Contains("duration"));
+                Check("an empty value is refused", !StormLive.TrySet("sky", "  ", out _));
+                Check("a comma-decimal locale cannot turn 0.5 into 5 (invariant parse)",
+                    StormLive.TrySet("drychance", "0.5", out _) && Math.Abs(ModConfig.StormDryChance.Value - 0.5f) < 0.001f);
+            }
+            finally
+            {
+                StormLive.ForgetServer();
+                ModConfig.Bind(new ConfigFile(), new ConfigFile());
+            }
+        }
 
         // ---- StormLook --------------------------------------------------------------
 
@@ -3071,8 +3201,10 @@ namespace RagnaroksWrath.Tests
                 foreach (string l in File.ReadAllLines(TitleStore.OverridePath))
                     if (l.StartsWith("42\t", StringComparison.Ordinal)) row = l;
                 string[] cols = row?.Split('\t');
+                // Still the THIRD column since the earned list rode in after it: a build from before
+                // the list reads columns 1-3 exactly as it always did.
                 Check($"the mark is a third column, so columns 1-2 read as before (row '{row}')",
-                    cols != null && cols.Length == 3 && cols[1] == "Stormrider" && cols[2] == "W");
+                    cols != null && cols.Length >= 3 && cols[1] == "Stormrider" && cols[2] == "W");
 
                 File.WriteAllText(TitleStore.OverridePath, "version\t1\n7\tPlaguewalker\n");   // pre-mark file
                 TitleStore.Load();
@@ -3085,6 +3217,65 @@ namespace RagnaroksWrath.Tests
                 TitleStore.ClearWinterborn();               // winter ended
                 TitleStore.Load();
                 Check("clearing at winter's end is saved", !TitleStore.WinterbornThisWinter(7L));
+
+                // ---- choosing a title ----
+                File.WriteAllText(TitleStore.OverridePath, "version\t1\n7\tPlaguewalker\n");   // a file from before the earned list
+                TitleStore.Load();
+                Check("an old file's title counts as earned and is worn (auto)",
+                    TitleStore.Earned(7L).Count == 1 && TitleStore.Earned(7L)[0] == "Plaguewalker" &&
+                    TitleStore.Pick(7L) == null && TitleStore.Shown(7L) == "Plaguewalker");
+
+                TitleStore.Set(7L, "Stormrider");
+                Check("a new title is added to what was earned, and auto wears it",
+                    TitleStore.Earned(7L).Count == 2 && TitleStore.Shown(7L) == "Stormrider");
+
+                Check("a player can choose an earned title, ignoring case",
+                    TitleStore.TryChoose(7L, "plaguewalker", out string tm1) && TitleStore.Shown(7L) == "Plaguewalker" && tm1.Contains("Plaguewalker"));
+                TitleStore.Set(7L, "Ashbringer");
+                Check("a chosen title stays worn when a later one is earned, and the later one is kept",
+                    TitleStore.Shown(7L) == "Plaguewalker" && TitleStore.Get(7L) == "Ashbringer" && TitleStore.Earned(7L).Count == 3);
+
+                Check("a title not earned is refused, and the reply lists what they have",
+                    !TitleStore.TryChoose(7L, "Warden", out string tm2) && TitleStore.Shown(7L) == "Plaguewalker" &&
+                    tm2.Contains("Ashbringer") && tm2.Contains("Stormrider"));
+                Check("an id of 0 can choose nothing", !TitleStore.TryChoose(0L, "auto", out _));
+
+                TitleStore.Unload();
+                TitleStore.Load();
+                Check("the choice and every earned title survive a restart",
+                    TitleStore.Shown(7L) == "Plaguewalker" && TitleStore.Get(7L) == "Ashbringer" && TitleStore.Earned(7L).Count == 3);
+
+                Check("`none` wears nothing, and nothing is replayed to a joining player",
+                    TitleStore.TryChoose(7L, "none", out _) && TitleStore.Shown(7L) == null &&
+                    !System.Linq.Enumerable.Any(TitleStore.AllShown(), kv => kv.Key == 7L));
+                TitleStore.Load();
+                Check("`none` survives a restart", TitleStore.Shown(7L) == null && TitleStore.Pick(7L) == TitleStore.PickNone);
+
+                Check("`auto` goes back to the latest earned",
+                    TitleStore.TryChoose(7L, "auto", out _) && TitleStore.Shown(7L) == "Ashbringer" && TitleStore.Pick(7L) == null);
+
+                // What a build from before the earned list sees in the new file. It reads column 2 as
+                // the title and column 3 as the Winterborn mark, so a rollback must find the latest
+                // earned title there, a W only where one belongs, and no row it would call corrupt.
+                TitleStore.TryChoose(7L, "Stormrider", out _);
+                TitleStore.MarkWinterborn(7L);
+                string row7 = null;
+                foreach (string l in File.ReadAllLines(TitleStore.OverridePath))
+                    if (l.StartsWith("7\t", StringComparison.Ordinal)) row7 = l;
+                string[] c7 = row7?.Split('\t');
+                Check($"an older build reads the latest earned title and the mark where it always did (row '{row7}')",
+                    c7 != null && c7[1] == "Ashbringer" && c7[2] == "W" &&
+                    Array.Exists(c7, t => t == "earned=Plaguewalker,Stormrider,Ashbringer") && Array.Exists(c7, t => t == "pick=Stormrider"));
+
+                // An admin hand-edits the pick to a title the player never earned: the nameplate
+                // falls back to the latest rather than showing a title they do not hold.
+                File.WriteAllText(TitleStore.OverridePath, "version\t1\n7\tAshbringer\tearned=Ashbringer\tpick=Warden\n");
+                TitleStore.Load();
+                Check("a pick of a title not earned falls back to the latest", TitleStore.Shown(7L) == "Ashbringer");
+
+                TitleStore.Set(7L, null);
+                Check("stripping a player's title clears their earned list and choice too",
+                    TitleStore.Earned(7L).Count == 0 && TitleStore.Pick(7L) == null && TitleStore.Shown(7L) == null);
 
                 HealthStore.OverridePath = Path.Combine(ldir, "health.dat");
                 HealthStore.Load();

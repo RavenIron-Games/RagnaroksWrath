@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased
+
+**Storms are fiercer by default.** Three defaults change, and a server already running the old
+defaults moves to the new ones on its first start.
+
+- **`StormsForceWeather` is now on.** A storm shows its own stormy sky (a dark thunderstorm, or the
+  dry Eikthyr sky) instead of whatever the world's weather happens to be. Every player needs the
+  same value and a full game restart to see a change.
+- **`StormDurationSeconds` is now 600** (was 300): a storm lasts ten minutes.
+- **`LightningMeanMinutes` is now 4** (was 15): a dry storm gives about two to three bolts while a
+  player stands under it, where before most storms gave none. Wet storms still give none.
+- **Existing servers move too.** The config version goes 3 to 4. A setting still holding the old
+  default (`false`, `300`, `15`) is moved to the new one and the start-up log names each; any other
+  value is yours and stays. If you turned `StormsForceWeather` off on purpose, for example beside
+  another weather mod, set it back to `false` once after upgrading.
+
+### Choose your title
+
+Titles used to replace each other: whatever you earned last was the only one you had. Now every
+title you earn is kept, and you choose which one to wear.
+
+- **`/wrath title`** in chat (or `wrath title` in the console) lists the titles you have earned and
+  the one you wear. Any player can use it, not only admins, and it only ever changes your own title.
+- **`/wrath title <name>`** wears that title. It stays until you choose again, even when you earn a
+  new one; the new one is kept, and the announcement says you earned it rather than that you are it.
+- **`/wrath title auto`** goes back to wearing each new title as you earn it, which is the default.
+  **`/wrath title none`** wears no title.
+- **Upgrading:** the title each player wears today counts as earned, and nobody's choice changes
+  until they make one. Titles earned before this version were not recorded, so they are not in the
+  list.
+- If you roll back to an older version, everyone simply wears their latest earned title again; the
+  older version ignores the new parts of the file.
+- Only the server can hand out titles now. Before, a modified client could put one on anyone's
+  nameplate.
+
+### Storm settings change live
+
+Until now the storm's sky, length and reach were copied into the game once, when the world loaded,
+so changing them meant a full restart for every player. They now apply the moment they change.
+
+- **`wrath storm`** shows the settings in effect, and **`wrath storm set <name> <value>`** changes
+  one: `sky`, `duration`, `range`, `wetsky`, `drysky`, `drychance`, `lightning`, `lightningon`. It
+  is saved to the config, so it survives a restart. Typed in game it goes through the game's admin
+  list, like the rest of `wrath`. A value outside the allowed range is clamped and says so.
+- **The server's sky, duration and range are sent to every player**, who follow them whatever
+  their own file says, and a storm already running changes sky. A change made in a configuration
+  manager on the server does the same.
+- A player on an older version, or on a server without this version, keeps using their own file and
+  still needs a full restart for those three.
+- The lightning rate and the dry chance were always read when used, so they were already live.
+
 ## 0.29.0
 
 **The wild answers a spawn war again.** On contested ground, wildlife (deer, boar and hares by
