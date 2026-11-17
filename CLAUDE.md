@@ -498,8 +498,9 @@ overlap if it is ever installed alongside.
 ## Current state
 
 **0.30.0 cut 2026-11-17 (pins FireFront 1.0.4, BepInExPack 5.4.2360; both live on Hexium and
-Thunderstore that day), packaged from a fresh clone, NOT uploaded.** Branch
-`feature/fiercer-storms-and-titles`, local, not pushed. Its contents were VERIFIED IN-GAME
+Thunderstore that day), packaged from a fresh clone, NOT uploaded.** Merged to `main` the same
+day as PR #16 (`186b87a`), right after PR #15 brought 0.29.1 in, and tagged `v0.30.0`, the repo's
+first tag. `main`'s tree is byte-identical to the commit the zip was built from. Its contents were VERIFIED IN-GAME
 2026-11-17 on Storm10 (Valheim 1.0.20, FireFront 1.0.4, the `testing` Gale client):**
 - **ServerSync** handshake: both sides sent `Ragnarok's Wrath version 0.29.0 and minimum version
   0.29.0`; the client logged `Received 138 configs … from the server`; an admin's Configuration
@@ -512,8 +513,10 @@ Thunderstore that day), packaged from a fresh clone, NOT uploaded.** Branch
   caught each one, the client built the bolt material (`Sprites/Default`) and found vanilla's
   ThunderStorm `Thunder`, and the owner confirmed by eye that it looks good. Close-strike DAMAGE was
   not exercised (nobody stood within 8 m); natural bolts take the same path as `wrath storm strike`.
-- Still unverified: titles (`/wrath title`) beyond earning Stormrider, damage, and whether a
-  non-admin client's own file stays untouched under ServerSync (the admin's did change, via CM).
+- **Chosen titles**: choosing a title with `/wrath title` in chat works, confirmed by the owner in
+  game 2026-11-17, after Stormrider was earned.
+- Still unverified: lightning damage, and whether a non-admin client's own file stays untouched
+  under ServerSync (the admin's did change, via CM).
 
 **0.29.0 cut 2026-09-25: the wild answers a spawn war again**, the fix below, with the BepInExPack
 pin moved to 5.4.2351 (Hexium's current) and FireFront left at 1.0.2. Its code is the tested build's;
