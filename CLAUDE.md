@@ -496,6 +496,22 @@ overlap if it is ever installed alongside.
 
 ## Current state
 
+**Unreleased, on `feature/fiercer-storms-and-titles` (local, not pushed), VERIFIED IN-GAME
+2026-11-17 on Storm10 (Valheim 1.0.20, FireFront 1.0.4, the `testing` Gale client):**
+- **ServerSync** handshake: both sides sent `Ragnarok's Wrath version 0.29.0 and minimum version
+  0.29.0`; the client logged `Received 138 configs … from the server`; an admin's Configuration
+  Manager edit reached the server (`Received 1 configs … from client`) and came back down.
+- **Forced storms**: `wrath storm start` forwarded the player's position; `stop` ended it.
+- **Live storm settings**: `sky off/on` and `size 1500/150` reached the RUNNING storm on server and
+  client ("the running storm included"). The first cut changed only the templates, because vanilla
+  runs an event from `ev.Clone()`; the owner caught it by eye ("the sky never changed").
+- **Realistic lightning**: every bolt that cleared the homestead standoff took a TREE, FireFront
+  caught each one, the client built the bolt material (`Sprites/Default`) and found vanilla's
+  ThunderStorm `Thunder`, and the owner confirmed by eye that it looks good. Close-strike DAMAGE was
+  not exercised (nobody stood within 8 m); natural bolts take the same path as `wrath storm strike`.
+- Still unverified: titles (`/wrath title`) beyond earning Stormrider, damage, and whether a
+  non-admin client's own file stays untouched under ServerSync (the admin's did change, via CM).
+
 **0.29.0 cut 2026-09-25: the wild answers a spawn war again**, the fix below, with the BepInExPack
 pin moved to 5.4.2351 (Hexium's current) and FireFront left at 1.0.2. Its code is the tested build's;
 only the version strings changed. **0.28.0 and FireFront 1.0.2 went live on Hexium 2026-09-24**
