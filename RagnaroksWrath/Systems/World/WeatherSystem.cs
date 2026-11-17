@@ -289,9 +289,9 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// <summary>
         /// Push the storm settings in effect on this machine into the two registered events, in
         /// place. This is what makes the sky, the duration and the range LIVE: the events were
-        /// built once at world load, and a storm already running holds a reference to the same
-        /// object, so it changes mid-storm too (EnvMan asks the active event for its forced sky
-        /// each time it picks an environment; the event's own timer reads the duration each frame).
+        /// built once at world load. A storm already running is a COPY of one of them, so it is
+        /// edited too; EnvMan asks that copy for its forced sky each time it picks an environment,
+        /// and the copy's own timer reads the duration each frame.
         ///
         /// Called when a baked setting changes: a config edit, the `wrath storm` command, a
         /// configuration manager, or ServerSync applying the server's value on a client (which
@@ -309,8 +309,19 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 RandEventSystem system = RandEventSystem.instance;
                 if (system != null && system.m_events != null)
                 {
+                    // The registered events are only TEMPLATES. Vanilla runs an event from a copy
+                    // (SetRandomEvent: `m_randomEvent = ev.Clone()`, decompiled 1.0.20 on
+                    // 2026-11-17), and EnvMan asks that copy for its sky. So a storm already
+                    // raging is changed only by editing the copy as well, on every machine, which
+                    // is what the first cut of this missed: the owner toggled the sky mid-storm on
+                    // Storm10 and it never moved, while the log said the change was live.
+                    var targets = new List<RandomEvent>(3);
+                    foreach (RandomEvent ev in system.m_events) targets.Add(ev);
+                    RandomEvent running = ActiveEvent(system);
+                    if (running != null && StormLook.IsStorm(running.m_name) && !targets.Contains(running)) targets.Add(running);
+
                     int changed = 0;
-                    foreach (RandomEvent ev in system.m_events)
+                    foreach (RandomEvent ev in targets)
                     {
                         if (ev == null || !StormLook.IsStorm(ev.m_name)) continue;
 
@@ -328,7 +339,8 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
                     if (changed > 0)
                         RagnaroksWrath.Log.LogInfo(
-                            $"[WeatherSystem] storm settings now live on {changed} event(s): " +
+                            $"[WeatherSystem] storm settings now live on {changed} event(s)" +
+                            (running != null && StormLook.IsStorm(running.m_name) ? ", the running storm included" : "") + ": " +
                             $"{(live.Force ? $"sky wet '{live.WetSky}' / dry '{live.DrySky}'" : "no sky forced")}, " +
                             $"duration {live.Duration:F0}s, range {live.Range:F0}m.");
                 }
@@ -736,6 +748,25 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 RagnaroksWrath.Log.LogWarning($"[WeatherSystem] could not read the active event: {ex.Message}");
                 StormActive = false;
             }
+        }
+
+        /// <summary>
+        /// The event vanilla is running right now (its private copy, see RefreshStormEvents), or
+        /// null. Through the same cached accessor liveness uses, resolved here if it has not been.
+        /// </summary>
+        private static RandomEvent ActiveEvent(RandEventSystem system)
+        {
+            if (system == null) return null;
+            if (!_activeEventResolved)
+            {
+                try
+                {
+                    _activeEventRef = AccessTools.FieldRefAccess<RandEventSystem, RandomEvent>("m_randomEvent");
+                    _activeEventResolved = _activeEventRef != null;
+                }
+                catch { return null; }   // RefreshStormState names the member when this fails
+            }
+            return _activeEventResolved ? _activeEventRef(system) : null;
         }
 
         // ---- what a storm means, at a position -------------------------------------------
