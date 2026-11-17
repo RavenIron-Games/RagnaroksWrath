@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.30.0
+
+**Fiercer storms with real lightning, titles you choose, and the server's settings on every
+player's game.** Every player must update together: this version refuses any player on another
+version (see ServerSync below).
 
 **Storms are fiercer by default.** Three defaults change, and a server already running the old
 defaults moves to the new ones on its first start.
@@ -73,6 +77,12 @@ A bolt used to be invisible: a fire and a line of text. Now each strike is a rea
 - Admins only, like the rest of `wrath`. A storm will not start over another event (a raid, a
   merchant visit), because the game has one event slot and starting it would end the other; it says
   so instead.
+
+### Packaging
+
+- FireFront pinned at **1.0.4** (was 1.0.2), the version this release was tested with. Its
+  reflected surfaces were checked by decompiling the 1.0.4 build.
+- BepInExPack pinned at **5.4.2360** (was 5.4.2351), the current one on both stores.
 
 ### Choose your title
 

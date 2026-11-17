@@ -14,7 +14,9 @@ A Valheim world-simulation mod by **Raven Iron**. The world reacts and remembers
 Spring, Summer, Fall, Winter on a configurable clock — driving **gameplay**, never visuals: fire risk, plague growth, frost, farming yield all swing with the season. Runs its own clock, or defers automatically to **Seasonality** (RustyMods) when installed — no second clock, no conflict.
 
 ### ⛈ Devastating Storms
-Real vanilla events — banner, music, timer — fired on our schedule, positional and local: fire risk, wind and plague spread all rise **inside the storm's area** and nowhere else. A storm over contested ground escalates the war beneath it. And with FireFront installed, a storm can **strike**: a rare bolt of lightning lands near someone under it and starts a real fire — never in rain, never near anything player-built. The sky is never touched (Seasonality-safe); a config toggle exists for owners who run no weather mod and want the thunderstorm look.
+Real vanilla events — banner, music, timer — fired on our schedule, positional and local: plague spread rises **inside the storm's area** and nowhere else, and a storm over contested ground escalates the war beneath it. Each storm brings its own sky — a rain-lashed thunderstorm or Eikthyr's dry, crackling dark — through the game's own event override, which works alongside Seasonality (one toggle hands the sky back to your weather mod). Admins can start one where they stand, end it, and change its sky, length and size (a radius of up to 5 km) while it rages, all from the console.
+
+**Lightning, as real as we could make it** (with FireFront): a jagged, branching bolt from the clouds, flickering through its return strokes, with a flash that lights the trees around it and thunder that arrives at the speed of sound — a crack overhead, a rumble seconds later from a distant strike. Bolts go for the tallest tree or ridge nearby, hurt and throw back anyone standing too close, and set real fires — unless it rains there, where they strike just the same but start nothing. A bolt never lands near anything player-built.
 
 ### 🦠 Plague — in the land, and in you
 A spreading, curable sickness that lives in the ground — and it starts on its own: every so often (rarer than daily by default, likelier on corrupted or burnt land, carried by storms) an outbreak quietly takes root where people live and walk. It grows where players linger, creeps along its frontier, feeds on corruption, rides storms — and dies back through winter or neglect. Clients see a **grey-green miasma** where it runs deep: no marker, no map icon, just the land looking wrong.
@@ -40,10 +42,10 @@ The creature that kills you is marked in that moment: it gains a star, and its n
 Where a story completes, a stone rises: a great fire fully healed, a plague driven out — blessed. A war lost to the blight — cursed. The land recovering from Stricken raises one rare stone on the ground that healed the most. Standing stones carry real auras (blessed ground heals quicker and sheds sickness faster; cursed ground sickens you and breeds meaner things) and wear **glowing runes** — gold or blood-red. The stones can be broken, but the land books the vandal, and it does not forget.
 
 ### 🏅 Titles
-Earned from what happened to you, never from tracked stats: **Stormrider**, **Plaguewalker**, **Winterborn**, **Ashbringer**, **Warden**, **Despoiler**. Latest earned shows under your nameplate.
+Earned from what happened to you, never from tracked stats: **Stormrider**, **Plaguewalker**, **Winterborn**, **Ashbringer**, **Warden**, **Despoiler**. Every title you earn is kept, and you choose which one shows under your nameplate: type `/wrath title` in chat to see yours, `/wrath title <name>` to wear one, `auto` to wear each new one as you earn it (the default), or `none`.
 
 ### 🛠 The `wrath` console
-`wrath status`, `wrath zone`, `wrath relics` answer anywhere; `wrath zone set`, `wrath care set`, `wrath harm set`, `wrath save` run on the server — and typed in-game by an **admin**, they forward through vanilla's own admin gate, execute where the world lives, and reply to your screen. Server owners never need to hand-edit a save file again (though they can: every store is plain tab-separated text).
+`wrath status`, `wrath zone`, `wrath relics`, `wrath storm` answer anywhere; `wrath zone set`, `wrath care set`, `wrath harm set`, `wrath save` run on the server — and typed in-game by an **admin**, they forward through vanilla's own admin gate, execute where the world lives, and reply to your screen. Admins also drive the weather: `wrath storm start [dry|wet]`, `wrath storm stop`, `wrath storm strike` (one bolt, now), and `wrath storm set <sky|duration|size|lightning|…> <value>`, saved to the config and live at once. `wrath title` is for every player, and only ever changes your own. Server owners never need to hand-edit a save file again (though they can: every store is plain tab-separated text).
 
 ---
 
@@ -53,7 +55,9 @@ Drop `RagnaroksWrath.dll` into `BepInEx/plugins/` on the **server and every clie
 
 Config is two files in `BepInEx/config/`: `com.raveniron.ragnarokswrath.cfg` holds every gameplay system's on/off switch and the handful of settings most servers change, and `com.raveniron.ragnarokswrath.advanced.cfg` holds the tuning — every rate, threshold and aura. **[docs/CONFIG.md](docs/CONFIG.md)** walks through all of them. Upgrading from 0.27.x moves your settings over on the first start, values kept, and backs the old file up beside them.
 
-**Keep the config identical on the server and every client.** Many gameplay settings act on each player's own game — sickness and chill, the exposure tiers, tired soil and the crop list, every land consequence with its thresholds and the wildlife list, grudges and spawn wars, the nemesis, relic stones — so a client with a diverging config plays by different rules on the same world. The guide marks which. The visual effects are the exception: each player chooses their own. If the server and a client disagree about the mod *version*, the client warns once on screen — mismatched pairs fail safe, but features silently stop showing until they match.
+**The server's settings are every player's settings** (ServerSync). Many gameplay settings act on each player's own game — sickness and chill, the exposure tiers, tired soil and the crop list, every land consequence, grudges and spawn wars, the nemesis, relic stones, lightning damage — so the server sends its own values to every player at login and whenever they change. A player's own file is never overwritten; it comes back when they leave. With `LockConfiguration` on (the default) only admins can change the settings from in game, and their change goes out to everyone. The visual effects stay each player's own choice.
+
+**Every player must run exactly the server's version.** A player without Ragnarok's Wrath, or on any other version, is refused at the door with a message naming both versions — update the server and every player together.
 
 ## Plays well with
 
@@ -64,7 +68,7 @@ Config is two files in `BepInEx/config/`: `com.raveniron.ragnarokswrath.cfg` hol
 ## Known limitations
 
 - On a **Steam Cloud** singleplayer world, the mod's world-state files live beside the local save and do not travel with the cloud — move machines and the land starts a fresh memory. Dedicated servers and local worlds are unaffected.
-- The mod adds **no prefabs, no assets, no bundles** — every visual is generated in code. This is deliberate and load-bearing; it will not change.
+- The mod adds **no prefabs, no assets, no bundles** — every visual is generated in code, and the thunder and sky flash are the game's own. This is deliberate and load-bearing; it will not change.
 
 ## Early build
 

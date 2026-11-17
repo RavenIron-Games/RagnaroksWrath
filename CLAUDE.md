@@ -273,10 +273,11 @@ overlap if it is ever installed alongside.
   only to move that line. **Before every RW release, compare the FireFront pin with
   `valheim.hexium.gg/api/experimental/package/RavenIronStudios/FireFront/`**, and move it whenever a
   FireFront release has shipped since (after checking the reflected surfaces still resolve). **The pin may
-  also LEAD the store, and then the upload order is the gate:** since 2026-09-24 the manifest pins
-  `RavenIronStudios-FireFront-1.0.2` (per-fire arson blame) while the store's newest is 1.0.1. Upload
-  FireFront 1.0.2 first, confirm `…/package/RavenIronStudios/FireFront/1.0.2/` answers 200 rather than
-  404, and only then upload this mod; a pin the store cannot resolve fails the install. Hexium DOES
+  also LEAD the store, and then the upload order is the gate:** on 2026-09-24 the manifest pinned
+  `RavenIronStudios-FireFront-1.0.2` (per-fire arson blame) while the store's newest was 1.0.1. Upload
+  FireFront first, confirm `…/package/RavenIronStudios/FireFront/<pin>/` answers 200 rather than
+  404, and only then upload this mod; a pin the store cannot resolve fails the install. (0.30.0 pins
+  1.0.4, which both stores already served with a 200 on 2026-11-17, so no ordering applies.) Hexium DOES
   list the current BepInExPack whatever the zip says — every Raven Iron listing reads 5.4.2350,
   including one uploaded before 5.4.2350 existed, so it resolves when it lists rather than on
   upload — and does NOT do that for any other dependency, which is why this one stayed wrong.
@@ -496,7 +497,9 @@ overlap if it is ever installed alongside.
 
 ## Current state
 
-**Unreleased, on `feature/fiercer-storms-and-titles` (local, not pushed), VERIFIED IN-GAME
+**0.30.0 cut 2026-11-17 (pins FireFront 1.0.4, BepInExPack 5.4.2360; both live on Hexium and
+Thunderstore that day), packaged from a fresh clone, NOT uploaded.** Branch
+`feature/fiercer-storms-and-titles`, local, not pushed. Its contents were VERIFIED IN-GAME
 2026-11-17 on Storm10 (Valheim 1.0.20, FireFront 1.0.4, the `testing` Gale client):**
 - **ServerSync** handshake: both sides sent `Ragnarok's Wrath version 0.29.0 and minimum version
   0.29.0`; the client logged `Received 138 configs … from the server`; an admin's Configuration
