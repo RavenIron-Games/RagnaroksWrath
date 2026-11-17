@@ -189,7 +189,13 @@ $sets = @(
         "UnityEngine.PhysicsModule.dll",
         "UnityEngine.ParticleSystemModule.dll",
         "UnityEngine.AudioModule.dll",
-        "UnityEngine.ImageConversionModule.dll"
+        "UnityEngine.ImageConversionModule.dll",
+        # The vendored ServerSync's connect-error patch writes FejdStartup's TMP text, whose base
+        # types live in these. Added 2026-11-17 in RW; harmless to a repo that never names them.
+        "Unity.TextMeshPro.dll",
+        "UnityEngine.UI.dll",
+        "UnityEngine.UIModule.dll",
+        "UnityEngine.TextRenderingModule.dll"
     )},
     @{ Path = $bepinex; Files = @(
         "BepInEx.dll",

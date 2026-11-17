@@ -1652,7 +1652,6 @@ namespace RagnaroksWrath.Tests
             ModConfig.Bind(new ConfigFile(), new ConfigFile());   // fresh defaults; restored at the end
             try
             {
-                StormLive.ForgetServer();
 
                 var cfg = StormLive.FromConfig();
                 Check("the shipped storm now forces its sky, lasts 600 s and reaches 96 m",
@@ -1663,42 +1662,21 @@ namespace RagnaroksWrath.Tests
                 Check("with no sky forced both looks carry an EMPTY environment (rule 4)",
                     StormLive.SkyFor(off, true) == "" && StormLive.SkyFor(off, false) == "");
 
-                // Who is believed.
-                var theirs = new StormLive.Settings { Force = false, Duration = 90f, Range = 200f, WetSky = "Rain", DrySky = "Clear" };
-                Check("a client that has not heard from the server uses its own config",
-                    !StormLive.Effective(isAuthority: false).Equals(default(StormLive.Settings)) &&
-                    StormLive.Effective(false).Force && Math.Abs(StormLive.Effective(false).Duration - 600f) < 0.01f);
-                Check("the server's snapshot is accepted", StormLive.AcceptFromServer(theirs) && StormLive.HasServerValue);
-                Check("a client then follows the server, not its own config",
-                    !StormLive.Effective(false).Force && Math.Abs(StormLive.Effective(false).Duration - 90f) < 0.01f &&
-                    StormLive.Effective(false).WetSky == "Rain");
-                Check("the authority NEVER follows a packet, only its own config",
-                    StormLive.Effective(true).Force && Math.Abs(StormLive.Effective(true).Duration - 600f) < 0.01f);
-                StormLive.ForgetServer();
-                Check("a new world session forgets the old server's word",
-                    !StormLive.HasServerValue && StormLive.Effective(false).Force);
-
-                // A packet from the network is not trusted.
-                Check("a NaN duration is refused outright, not clamped to something nobody sent",
-                    !StormLive.AcceptFromServer(new StormLive.Settings { Duration = float.NaN, Range = 96f }) && !StormLive.HasServerValue);
-                Check("an infinite range is refused",
-                    !StormLive.AcceptFromServer(new StormLive.Settings { Duration = 600f, Range = float.PositiveInfinity }));
-                StormLive.AcceptFromServer(new StormLive.Settings { Force = true, Duration = 1f, Range = 99999f, WetSky = null, DrySky = new string('x', 500) });
-                var clamped = StormLive.Effective(false);
-                Check("an absurd duration and range are clamped into the legal band",
-                    Math.Abs(clamped.Duration - StormLive.MinDuration) < 0.01f && Math.Abs(clamped.Range - StormLive.MaxRange) < 0.01f);
-                Check("a missing sky name becomes empty and a huge one is cut short",
-                    clamped.WetSky == "" && clamped.DrySky.Length == StormLive.MaxSkyNameLength);
-                StormLive.AcceptFromServer(theirs);
-                Check("a refused snapshot leaves the last good one in place",
-                    !StormLive.AcceptFromServer(new StormLive.Settings { Duration = float.NaN, Range = 96f }) &&
-                    Math.Abs(StormLive.Effective(false).Duration - 90f) < 0.01f);
-                StormLive.ForgetServer();
-
-                Check("Differs sees a changed sky, duration or range and ignores float dust",
-                    StormLive.Differs(cfg, off) &&
-                    StormLive.Differs(cfg, new StormLive.Settings { Force = true, Duration = 601f, Range = 96f, WetSky = "ThunderStorm", DrySky = "Eikthyr" }) &&
-                    !StormLive.Differs(cfg, new StormLive.Settings { Force = true, Duration = 600.0001f, Range = 96f, WetSky = "ThunderStorm", DrySky = "Eikthyr" }));
+                // Which settings ServerSync leaves on each player's own machine.
+                Check("the layout stamp, VerboseLogging and the visual dials stay local",
+                    SyncRules.IsLocal(ConfigLedger.MetaSection, ConfigLedger.VersionKey) &&
+                    SyncRules.IsLocal(ModConfig.GeneralSection, "VerboseLogging") &&
+                    SyncRules.IsLocal(ModConfig.VisualsSection, "PlagueFogEnabled") &&
+                    SyncRules.IsLocal(ModConfig.VisualsSection, "FrostBreathFloor"));
+                Check("the storm settings, the client-read gameplay settings and the server's zone sync follow the server",
+                    !SyncRules.IsLocal(ModConfig.WeatherSection, "StormsForceWeather") &&
+                    !SyncRules.IsLocal(ModConfig.WeatherSection, "StormDurationSeconds") &&
+                    !SyncRules.IsLocal(ModConfig.ConsequenceSection, "EnableConsequence") &&
+                    !SyncRules.IsLocal(ModConfig.GeneralSection, "TickBudgetMs") &&
+                    !SyncRules.IsLocal(ModConfig.VisualsSection, "EnableZoneSync") &&
+                    !SyncRules.IsLocal(ModConfig.VisualsSection, "ZoneSyncRadiusZones"));
+                Check("SyncRules names the same sections ModConfig binds",
+                    SyncRules.GeneralSection == ModConfig.GeneralSection && SyncRules.VisualsSection == ModConfig.VisualsSection);
 
                 // Which config keys need a push into the events.
                 Check("exactly the five baked keys need pushing, and the live-read ones do not",
@@ -1726,12 +1704,26 @@ namespace RagnaroksWrath.Tests
                 Check("an unknown name is refused with the list of real ones",
                     !StormLive.TrySet("thunder", "1", out string m5) && m5.Contains("duration"));
                 Check("an empty value is refused", !StormLive.TrySet("sky", "  ", out _));
+                // `wrath storm start [dry|wet] [x z]`, the words after "wrath storm start".
+                string[] W(params string[] w) { var a = new string[3 + w.Length]; a[0] = "wrath"; a[1] = "storm"; a[2] = "start"; w.CopyTo(a, 3); return a; }
+                Check("bare `start` rolls the look and picks the place",
+                    StormLive.TryParseStart(W(), 3, out bool? d0, out UnityEngine.Vector3? p0) && d0 == null && p0 == null);
+                Check("`start dry` forces the dry look",
+                    StormLive.TryParseStart(W("DRY"), 3, out bool? d1, out _) && d1 == true);
+                Check("`start wet 120 -45.5` gives the look and the place, in either order",
+                    StormLive.TryParseStart(W("wet", "120", "-45.5"), 3, out bool? d2, out UnityEngine.Vector3? p2) && d2 == false &&
+                    p2.HasValue && Math.Abs(p2.Value.x - 120f) < 0.01f && Math.Abs(p2.Value.z + 45.5f) < 0.01f &&
+                    StormLive.TryParseStart(W("120", "-45.5", "wet"), 3, out bool? d2b, out _) && d2b == false);
+                Check("a lone number, three numbers, two looks or a stray word are refused",
+                    !StormLive.TryParseStart(W("12"), 3, out _, out _) && !StormLive.TryParseStart(W("1", "2", "3"), 3, out _, out _) &&
+                    !StormLive.TryParseStart(W("dry", "wet"), 3, out _, out _) && !StormLive.TryParseStart(W("big"), 3, out _, out _) &&
+                    !StormLive.TryParseStart(W("NaN", "4"), 3, out _, out _));
+
                 Check("a comma-decimal locale cannot turn 0.5 into 5 (invariant parse)",
                     StormLive.TrySet("drychance", "0.5", out _) && Math.Abs(ModConfig.StormDryChance.Value - 0.5f) < 0.001f);
             }
             finally
             {
-                StormLive.ForgetServer();
                 ModConfig.Bind(new ConfigFile(), new ConfigFile());
             }
         }

@@ -94,6 +94,8 @@ namespace RavenIron.RagnaroksWrath.Patches
                             "wrath title — the titles you have earned and the one you wear (any player; /wrath title in chat)\n" +
                             "wrath title <name> | auto | none — wear that title, follow new ones, or wear none\n" +
                             "wrath storm — the storm settings in effect\n" +
+                            "wrath storm start [dry|wet] [x z] — a storm now, where you stand when typed in game\n" +
+                            "wrath storm stop — end the storm now\n" +
                             $"wrath storm set <name> <value> — live, saved to the config; names: {StormLive.AdminKeys}\n" +
                             "Mutations run on the authority; typed in-game they forward to the " +
                             "server through vanilla's admin gate (adminlist.txt).");
@@ -147,6 +149,7 @@ namespace RavenIron.RagnaroksWrath.Patches
             sb.Append($"\nconfig layout v{ModConfig.ConfigVersion.Value.ToString(CultureInfo.InvariantCulture)}");
             string migration = ConfigMigration.LastSummary;
             sb.Append(string.IsNullOrEmpty(migration) ? " (nothing migrated this boot)" : $" — {migration}");
+            sb.Append("\n").Append(ServerSyncSetup.Describe());
 
             args.Context.AddString(sb.ToString());
         }
@@ -319,6 +322,13 @@ namespace RavenIron.RagnaroksWrath.Patches
         /// </summary>
         private static void Storm(Terminal.ConsoleEventArgs args)
         {
+            string verb = args.Args.Length >= 3 ? args.Args[2].ToLowerInvariant() : "";
+            if (verb == "start" || verb == "stop")
+            {
+                StormStartStop(args, verb == "start");
+                return;
+            }
+
             if (args.Args.Length >= 3 && args.Args[2].ToLowerInvariant() == "set")
             {
                 if (!Authority)
@@ -340,12 +350,61 @@ namespace RavenIron.RagnaroksWrath.Patches
                 return;
             }
 
-            bool fromServer = !Authority && StormLive.HasServerValue;
-            StormLive.Settings effective = StormLive.Effective(Authority);
-            string text = StormLive.Describe(effective, fromServer);
-            if (!Authority && !StormLive.HasServerValue)
-                text += "\n(this machine has not heard from the server: these are its own config's values)";
+            bool fromServer = ServerSyncSetup.Sync != null && !ServerSyncSetup.Sync.IsSourceOfTruth;
+            string text = StormLive.Describe(StormLive.FromConfig(), fromServer);
+            if (!Authority && !fromServer)
+                text += "\n(not synced from the server yet: these are this machine's own config's values)";
             args.Context.AddString(text);
+        }
+
+        /// <summary>
+        /// `wrath storm start [dry|wet] [x z]` and `wrath storm stop`. Admin only, like every
+        /// mutation here. Typed by a player, the command is forwarded with THEIR position added when
+        /// none was given, because the server console that replays it has no player of its own.
+        /// </summary>
+        private static void StormStartStop(Terminal.ConsoleEventArgs args, bool start)
+        {
+            if (!Authority)
+            {
+                ZNet znet = ZNet.instance;
+                if (znet == null || znet.IsServer())
+                {
+                    args.Context.AddString("wrath: storms start on the authority only (server console or listen host).");
+                    return;
+                }
+
+                var line = new StringBuilder(string.Join(" ", args.Args));
+                Player local = Player.m_localPlayer;
+                bool needsHere = start && local != null &&
+                                 StormLive.TryParseStart(args.Args, 3, out _, out UnityEngine.Vector3? given) && given == null;
+                if (needsHere)
+                {
+                    UnityEngine.Vector3 p = local.transform.position;
+                    line.Append(' ').Append(p.x.ToString("0.#", CultureInfo.InvariantCulture))
+                        .Append(' ').Append(p.z.ToString("0.#", CultureInfo.InvariantCulture));
+                }
+                znet.RemoteCommand(line.ToString());
+                RagnaroksWrath.Log.LogInfo($"wrath: forwarded '{line}'.");
+                args.Context.AddString("wrath: sent to the server (admins only). The banner shows when the storm starts.");
+                return;
+            }
+
+            string message;
+            bool ok;
+            if (start)
+            {
+                if (!StormLive.TryParseStart(args.Args, 3, out bool? dry, out UnityEngine.Vector3? at))
+                {
+                    args.Context.AddString("usage: wrath storm start [dry|wet] [x z]");
+                    return;
+                }
+                // A listen host typing it with no coordinates means "here".
+                if (at == null && Player.m_localPlayer != null) at = Player.m_localPlayer.transform.position;
+                ok = WeatherSystem.TryForceStart(at, dry, out message);
+            }
+            else ok = WeatherSystem.TryForceStop(out message);
+
+            args.Context.AddString("storm: " + message);
         }
 
         private static void SaveAll(Terminal.ConsoleEventArgs args)

@@ -6,8 +6,8 @@
 defaults moves to the new ones on its first start.
 
 - **`StormsForceWeather` is now on.** A storm shows its own stormy sky (a dark thunderstorm, or the
-  dry Eikthyr sky) instead of whatever the world's weather happens to be. Every player needs the
-  same value and a full game restart to see a change.
+  dry Eikthyr sky) instead of whatever the world's weather happens to be. The server's value now
+  reaches every player on its own (see "Every player gets the server's settings" below).
 - **`StormDurationSeconds` is now 600** (was 300): a storm lasts ten minutes.
 - **`LightningMeanMinutes` is now 4** (was 15): a dry storm gives about two to three bolts while a
   player stands under it, where before most storms gave none. Wet storms still give none.
@@ -15,6 +15,36 @@ defaults moves to the new ones on its first start.
   default (`false`, `300`, `15`) is moved to the new one and the start-up log names each; any other
   value is yours and stays. If you turned `StormsForceWeather` off on purpose, for example beside
   another weather mod, set it back to `false` once after upgrading.
+
+### Every player gets the server's settings (ServerSync)
+
+44 of this mod's settings are read on each player's own game, not the server's: health, frost,
+farming, the whole Consequence section, the wildlife list, the nemesis, relics, and more. Until now a
+change on the server never reached them; every player had to edit their own file to match. Now the
+server's settings are sent to every player at login and whenever they change, through ServerSync.
+
+- **Every player must run exactly this version.** A player without Ragnarok's Wrath, or on any other
+  version, is refused when joining, with a message naming both versions. Update the server and every
+  player together.
+- **A player's own file is never overwritten.** Their game uses the server's values while connected
+  and goes back to its own file when they leave.
+- **New setting `LockConfiguration`** (main file, General, default on): only admins on
+  `adminlist.txt` may change the settings from a player's game, for instance in a configuration
+  manager, and such a change goes to the server and out to everyone. Players always get the server's
+  settings either way.
+- **What stays each player's own:** `VerboseLogging`, the visual dials (fog, frost breath, ash,
+  runes and their densities) and the config layout stamp. The zone-sync settings, though filed under
+  Visuals, are the server's and are synced.
+- `wrath status` now says where this machine's settings come from.
+
+### Force a storm
+
+- **`wrath storm start`** starts a storm now: where you stand when typed in game, on a random online
+  player from the server console. Add `dry` or `wet` to choose the look, and `x z` to place it.
+- **`wrath storm stop`** ends the storm now.
+- Admins only, like the rest of `wrath`. A storm will not start over another event (a raid, a
+  merchant visit), because the game has one event slot and starting it would end the other; it says
+  so instead.
 
 ### Choose your title
 
@@ -44,11 +74,8 @@ so changing them meant a full restart for every player. They now apply the momen
   one: `sky`, `duration`, `range`, `wetsky`, `drysky`, `drychance`, `lightning`, `lightningon`. It
   is saved to the config, so it survives a restart. Typed in game it goes through the game's admin
   list, like the rest of `wrath`. A value outside the allowed range is clamped and says so.
-- **The server's sky, duration and range are sent to every player**, who follow them whatever
-  their own file says, and a storm already running changes sky. A change made in a configuration
-  manager on the server does the same.
-- A player on an older version, or on a server without this version, keeps using their own file and
-  still needs a full restart for those three.
+- **Every player follows the server's sky, duration and range** (through ServerSync, above), and a
+  storm already running changes sky. A change made in a configuration manager does the same.
 - The lightning rate and the dry chance were always read when used, so they were already live.
 
 ## 0.29.0

@@ -84,13 +84,13 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             StormIsDry = false;
             StormCentre = Vector3.zero;
             StormRange = 0f;
+            _live = null;
         }
 
         /// <summary>True for either storm event. Liveness must accept both names, or a dry storm reads as no storm.</summary>
         public static bool IsStormEvent(string eventName) => StormLook.IsStorm(eventName);
 
         private float _sinceStormEnded;
-        private float _sinceStormSync;
         private readonly System.Random _rng = new System.Random();
 
         // Wild-anchor machinery (0.26.0): scratch for Homestead's sector scan, the
@@ -120,6 +120,8 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
         public void Initialise()
         {
+            _live = this;
+
             RagnaroksWrath.Log.LogInfo(
                 $"[{Name}] storms every {ModConfig.StormMinIntervalSeconds.Value:F0}-" +
                 $"{ModConfig.StormMaxIntervalSeconds.Value:F0}s, duration " +
@@ -158,18 +160,6 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             // copy of the world and nowhere else - the same failure shape as a console command
             // executing where it was typed.
             if (!RagnaroksWrath.IsSimulationAuthority()) return;
-
-            // Tell every client the storm settings, on a slow cadence whether or not anything
-            // changed (a change broadcasts at once, from RefreshStormEvents). That is what brings
-            // a player who just joined into line. Before the storm logic so a running storm and
-            // an empty sky are treated alike.
-            StormSync.EnsureRegistered();
-            _sinceStormSync += deltaSeconds;
-            if (_sinceStormSync >= StormSync.IntervalSeconds)
-            {
-                _sinceStormSync = 0f;
-                StormSync.Broadcast(StormLive.FromConfig());
-            }
 
             if (StormActive)
             {
@@ -303,18 +293,18 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// object, so it changes mid-storm too (EnvMan asks the active event for its forced sky
         /// each time it picks an environment; the event's own timer reads the duration each frame).
         ///
-        /// Called when a baked setting changes (a config edit, the `wrath storm` command, a
-        /// configuration manager) and when the server's values arrive on a client. Walks the public
-        /// `m_events` list rather than vanilla's private lookup (rule 5), touches nothing but our two
-        /// names, and does nothing when the world has no event system yet: the next registration
-        /// reads the same settings. The authority also tells every client at once.
+        /// Called when a baked setting changes: a config edit, the `wrath storm` command, a
+        /// configuration manager, or ServerSync applying the server's value on a client (which
+        /// raises SettingChanged like any other change). Walks the public `m_events` list rather
+        /// than vanilla's private lookup (rule 5), touches nothing but our two names, and does
+        /// nothing when the world has no event system yet: the next registration reads the same
+        /// settings.
         /// </summary>
         public static void RefreshStormEvents()
         {
             try
             {
-                bool authority = RagnaroksWrath.IsSimulationAuthority();
-                StormLive.Settings live = StormLive.Effective(authority);
+                StormLive.Settings live = StormLive.FromConfig();
 
                 RandEventSystem system = RandEventSystem.instance;
                 if (system != null && system.m_events != null)
@@ -340,15 +330,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                         RagnaroksWrath.Log.LogInfo(
                             $"[WeatherSystem] storm settings now live on {changed} event(s): " +
                             $"{(live.Force ? $"sky wet '{live.WetSky}' / dry '{live.DrySky}'" : "no sky forced")}, " +
-                            $"duration {live.Duration:F0}s, range {live.Range:F0}m" +
-                            (!authority && StormLive.HasServerValue ? " (from the server)." : "."));
-                }
-
-                // Tell the clients now rather than at the next cadence. Safe when nobody listens.
-                if (authority)
-                {
-                    StormSync.EnsureRegistered();
-                    StormSync.Broadcast(live);
+                            $"duration {live.Duration:F0}s, range {live.Range:F0}m.");
                 }
             }
             catch (Exception ex)
@@ -373,10 +355,10 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             {
                 if (system.HaveEvent(name)) return;
 
-                // The values this machine's events should carry: its own config on the authority,
-                // the server's word on a client that has heard it. Since 0.30.0 they are pushed
-                // into the live events by RefreshStormEvents whenever they change.
-                StormLive.Settings live = StormLive.Effective(RagnaroksWrath.IsSimulationAuthority());
+                // The values this machine's events should carry. On a client that is the server's
+                // config, through ServerSync, once the handshake has delivered it; until then its own.
+                // Either way RefreshStormEvents pushes every later change into the live events.
+                StormLive.Settings live = StormLive.FromConfig();
 
                 var storm = new RandomEvent
                 {
@@ -474,17 +456,77 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             if (!StormActive) MessageFeed.ToEveryone("The storm passes.");
         }
 
-        private void StartStorm(Vector3 centre)
+        // ---- forced storms (`wrath storm start` / `stop`) -----------------------------------
+
+        /// <summary>The live instance, so the console can drive it. Systems are rebuilt per world.</summary>
+        private static WeatherSystem _live;
+
+        /// <summary>
+        /// Start a storm NOW, on the authority, skipping the schedule, the homestead hold and the
+        /// interval. Refuses (and says why) rather than cutting another event short: vanilla has one
+        /// event slot and starting ours would end a raid or Valkyrie's Cargo's merchant mid-visit.
+        /// </summary>
+        /// <param name="centre">Where to centre it; null picks a random online player.</param>
+        /// <param name="dry">Force the look; null rolls StormDryChance as a scheduled storm does.</param>
+        public static bool TryForceStart(Vector3? centre, bool? dry, out string message)
+        {
+            message = null;
+            if (!RagnaroksWrath.IsSimulationAuthority()) { message = "storms start on the server only."; return false; }
+            if (!ModConfig.EnableWeather.Value) { message = "weather is turned off (EnableWeather = false)."; return false; }
+            WeatherSystem live = _live;
+            if (live == null || RandEventSystem.instance == null) { message = "the world is not running yet."; return false; }
+
+            RefreshStormState();
+            if (StormActive) { message = $"a storm already rages at ({StormCentre.x:F0}, {StormCentre.z:F0}); `wrath storm stop` first."; return false; }
+            string other = ForeignEventName();
+            if (other != null) { message = $"another event is running ('{other}'); a storm would end it. Try again when it is over."; return false; }
+
+            Vector3 at;
+            if (centre.HasValue) at = centre.Value;
+            else if (!live.TryPickStormCentre(out at)) { message = "nobody is online to centre a storm on; give coordinates: wrath storm start <x> <z>."; return false; }
+
+            if (!live.StartStorm(at, dry)) { message = "the storm could not start; the server log says why."; return false; }
+            message = $"a {(StormIsDry ? "dry" : "wet")} storm rages at ({at.x:F0}, {at.z:F0}) for " +
+                      $"{ModConfig.StormDurationSeconds.Value:F0}s.";
+            RagnaroksWrath.Log.LogInfo($"[WeatherSystem] storm forced by command: {message}");
+            return true;
+        }
+
+        /// <summary>End our storm now. Never touches an event that is not ours.</summary>
+        public static bool TryForceStop(out string message)
+        {
+            message = null;
+            if (!RagnaroksWrath.IsSimulationAuthority()) { message = "storms stop on the server only."; return false; }
+            RandEventSystem system = RandEventSystem.instance;
+            if (system == null || _live == null) { message = "the world is not running yet."; return false; }
+
+            RefreshStormState();
+            if (!StormActive) { message = "no storm is raging."; return false; }
+
+            system.ResetRandomEvent();   // public; ends the slot's event, which we just proved is ours
+            RefreshStormState();
+            if (StormActive) { message = "the storm did not end; the server log may say why."; return false; }
+            _live.ReportTransition();    // "storm ended" and "The storm passes", now rather than next tick
+            _live._sinceStormEnded = 0f;
+            message = "the storm is over.";
+            RagnaroksWrath.Log.LogInfo("[WeatherSystem] storm ended by command.");
+            return true;
+        }
+
+        /// <returns>True when the storm event was set.</returns>
+        private bool StartStorm(Vector3 centre, bool? forceDry = null)
         {
             RandEventSystem system = RandEventSystem.instance;
-            if (system == null) return;
+            if (system == null) return false;
 
             // THE ROLL, and it happens exactly here: once per storm, on the authority, before the
             // event is named. Everything downstream - the clients' skies, our own liveness read,
             // whether lightning can strike - follows from the NAME this picks, because that name
             // is the only thing vanilla replicates. Rolling anywhere else (per tick, per client,
-            // per query) would give two machines different storms.
-            string eventName = StormLook.Roll(_rng.NextDouble(), ModConfig.StormDryChance.Value);
+            // per query) would give two machines different storms. A forced storm may name its look.
+            string eventName = forceDry.HasValue
+                ? (forceDry.Value ? StormLook.DryEventName : StormLook.WetEventName)
+                : StormLook.Roll(_rng.NextDouble(), ModConfig.StormDryChance.Value);
             bool dry = StormLook.IsDry(eventName);
 
             // GetEvent returns null for a name the list lacks, and SetRandomEvent(null) would end
@@ -498,7 +540,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                         $"[WeatherSystem] storm event '{eventName}' is not in RandEventSystem's list " +
                         "(registration failed, or another mod rebuilt the list) - no storm will start.");
                 }
-                return;
+                return false;
             }
             _missingEventLogged = false;
 
@@ -509,7 +551,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             catch (Exception ex)
             {
                 RagnaroksWrath.Log.LogError($"[WeatherSystem] could not start storm: {ex.Message}");
-                return;
+                return false;
             }
 
             _sinceStormEnded = 0f;
@@ -538,6 +580,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             bool wasActive = StormActive;
             RefreshStormState();
             if (StormActive != wasActive) ReportTransition();
+            return true;
         }
 
         /// <summary>

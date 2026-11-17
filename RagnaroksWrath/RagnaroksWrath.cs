@@ -41,6 +41,39 @@ namespace RavenIron.RagnaroksWrath
             return znet != null && znet.IsDedicated();
         }
 
+        /// <summary>
+        /// What Harmony.PatchAll does inside, one patch class at a time, each in its own try/catch.
+        /// PatchAll stops at the first class that throws, so one patch a game update broke took every
+        /// patch after it down too; with the vendored ServerSync's classes in this assembly since
+        /// 2026-11-17 that would include the config lock and the version gate. Valkyrie's Cargo made
+        /// the same change for the same reason (its issue #31). Every failure is logged by name.
+        /// </summary>
+        private static void PatchEachClass(Harmony harmony)
+        {
+            System.Type[] types;
+            try { types = AccessTools.GetTypesFromAssembly(typeof(RagnaroksWrath).Assembly); }
+            catch (System.Exception ex) { Log.LogError($"patches: could not list this mod's types, none applied: {ex.Message}"); return; }
+
+            int applied = 0, failed = 0;
+            foreach (System.Type type in types)
+            {
+                if (type == null) continue;
+                bool isPatch;
+                try { isPatch = type.GetCustomAttributes(typeof(HarmonyAttribute), true).Length > 0; }
+                catch { isPatch = false; }
+                if (!isPatch) continue;
+
+                try { harmony.CreateClassProcessor(type).Patch(); applied++; }
+                catch (System.Exception ex)
+                {
+                    failed++;
+                    Log.LogError($"patch {type.FullName} did not apply: {ex.Message}");
+                }
+            }
+            if (failed > 0) Log.LogError($"patches: {applied} applied, {failed} FAILED (named above).");
+            else Log.LogInfo($"patches: {applied} patch class(es) applied.");
+        }
+
         private static void OnStormSettingChanged(object sender, BepInEx.Configuration.SettingChangedEventArgs e)
         {
             try
@@ -75,8 +108,14 @@ namespace RavenIron.RagnaroksWrath
             base.Config.SettingChanged += OnStormSettingChanged;
             advancedConfig.SettingChanged += OnStormSettingChanged;
 
+            // The server's settings on every player's game (2026-11-17). After the migration, so
+            // nothing intercepts its writes. A value arriving from the server raises SettingChanged
+            // on the client like any other change, so the storm events follow it with no extra code.
+            try { ServerSyncSetup.Register(base.Config, advancedConfig, PluginId, PluginName, PluginVersion); }
+            catch (System.Exception ex) { Log.LogError($"ServerSync: setup failed, every setting stays local: {ex}"); }
+
             _harmony = new Harmony(PluginId);
-            _harmony.PatchAll();
+            PatchEachClass(_harmony);
 
             // WorldTick is a plain MonoBehaviour driven from Update — deliberately NOT a
             // coroutine. See House Style rule 2: long-lived coroutines in this codebase have

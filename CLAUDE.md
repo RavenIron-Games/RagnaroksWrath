@@ -72,6 +72,12 @@ RagnaroksWrath/            server plugin (net472) — all simulation
   Feedback/MessageFeed.cs  the ONLY player-facing output channel
   Systems/World/           the simulation systems
   Net/                     TitleSync, ZoneSync — server-to-client state
+  Vendor/ServerSync.cs     blaxxun's ServerSync, vendored byte-identical to Valkyrie's Cargo's
+                           copy (since 2026-11-17). Never edit; Config/ServerSyncSetup.cs wires it.
+                           NOT in a "Libs" folder: .gitignore's libs/ would silently drop it.
+                           Every setting follows the server except SyncRules' locals. Version gate
+                           is ModRequired + minimum = this build: every player runs exactly this
+                           version or is refused at join
   Visuals/                 client-side procedural effects (PlagueFog); gated on a real GPU
   Patches/                 Harmony patches
 tests/CoreTests/           net10 harness; compiles the REAL source against stubs

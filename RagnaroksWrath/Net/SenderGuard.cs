@@ -27,7 +27,6 @@ namespace RavenIron.RagnaroksWrath.Net
             RelicSync.PlacedRpc.GetStableHashCode(),
             RelicSync.BrokenRpc.GetStableHashCode(),
             ZoneSync.RpcName.GetStableHashCode(),
-            StormSync.RpcName.GetStableHashCode(),
             // The server reads WHO chose a title from this packet's sender, so it must be real.
             TitleSync.ChooseRpc.GetStableHashCode(),
             TitleSync.ReplyRpc.GetStableHashCode(),
