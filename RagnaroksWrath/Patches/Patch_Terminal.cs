@@ -96,6 +96,7 @@ namespace RavenIron.RagnaroksWrath.Patches
                             "wrath storm — the storm settings in effect\n" +
                             "wrath storm start [dry|wet] [x z] — a storm now, where you stand when typed in game\n" +
                             "wrath storm stop — end the storm now\n" +
+                            "wrath storm strike — one lightning bolt now, near a player under the storm\n" +
                             $"wrath storm set <name> <value> — live, saved to the config; names: {StormLive.AdminKeys}\n" +
                             "Mutations run on the authority; typed in-game they forward to the " +
                             "server through vanilla's admin gate (adminlist.txt).");
@@ -326,6 +327,18 @@ namespace RavenIron.RagnaroksWrath.Patches
             if (verb == "start" || verb == "stop")
             {
                 StormStartStop(args, verb == "start");
+                return;
+            }
+            if (verb == "strike")
+            {
+                if (!Authority)
+                {
+                    if (!TryForward(args))
+                        args.Context.AddString("wrath: lightning is thrown on the authority only (server console or listen host).");
+                    return;
+                }
+                FireSystem.TryForceStrike(out string said);
+                args.Context.AddString("storm: " + said);
                 return;
             }
 

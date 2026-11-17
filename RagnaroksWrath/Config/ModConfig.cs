@@ -96,6 +96,11 @@ namespace RavenIron.RagnaroksWrath.Config
         public static ConfigEntry<float> LightningRingMaxMeters;
         public static ConfigEntry<float> LightningStandoffMeters;
         public static ConfigEntry<float> LightningIgniteRadiusMeters;
+        public static ConfigEntry<bool>  LightningHurtsPlayers;
+        public static ConfigEntry<float> LightningDamage;
+        public static ConfigEntry<float> LightningHurtRadiusMeters;
+        public static ConfigEntry<float> LightningAttractMeters;
+        public static ConfigEntry<bool>  LightningBoltsEnabled;
 
         // ---- Plague ---------------------------------------------------------------------
         public static ConfigEntry<float> PlagueSpreadIntervalSeconds;
@@ -344,11 +349,11 @@ namespace RavenIron.RagnaroksWrath.Config
 
                 StormForcedEnvironment = cfg.Bind(WeatherSection, "StormForcedEnvironment", "ThunderStorm",
                     "The sky shown during a storm that rolls wet, used only when StormsForceWeather is on. " +
-                    "ThunderStorm is rainy, and rain stops storm lightning from striking.");
+                    "ThunderStorm is rainy: bolts still strike, but rain stops them starting fires.");
 
                 StormDryEnvironment = cfg.Bind(WeatherSection, "StormDryEnvironment", "Eikthyr",
                     "The sky shown during a storm that rolls dry, used only when StormsForceWeather is on. " +
-                    "Eikthyr is dark and thundery with no rain, so lightning can strike.");
+                    "Eikthyr is dark and thundery with no rain, so a bolt can start a fire.");
 
                 StormDryChance = cfg.Bind(WeatherSection, "StormDryChance", 0.5f,
                     new ConfigDescription(
@@ -443,15 +448,22 @@ namespace RavenIron.RagnaroksWrath.Config
                     "FireFront installed; does nothing without it.");
 
                 StormLightningEnabled = cfg.Bind(FireSection, "StormLightningEnabled", true,
-                    "Turns storm lightning on or off: a rare bolt during a Devastating Storm that can start " +
-                    "a fire nearby, never in rain. Needs FireFront installed with its own fire spread " +
-                    "enabled, or nothing happens.");
+                    "Turns storm lightning on or off: bolts during a Devastating Storm that strike tall " +
+                    "things, can hurt players close by, and start a fire unless it rains there. Needs " +
+                    "FireFront installed.");
 
                 LightningMeanMinutes = cfg.Bind(FireSection, "LightningMeanMinutes", 4f,
                     new ConfigDescription(
-                        "Average minutes between lightning bolts while a storm holds at least one player under " +
-                        "a dry sky. Higher makes strikes rarer.",
+                        "Average minutes between lightning bolts while a storm holds at least one player. " +
+                        "Higher makes strikes rarer.",
                         new AcceptableValueRange<float>(1f, 600f)));
+
+                // Added 2026-11-17 with realistic lightning, at the owner's request. Read on each
+                // PLAYER's game: the damage is applied there, to the player's own character, which is
+                // the only place vanilla lets it be applied. ServerSync carries the server's value.
+                LightningHurtsPlayers = cfg.Bind(FireSection, "LightningHurtsPlayers", true,
+                    "A bolt that lands close to a player hurts and staggers them with lightning damage, " +
+                    "most at the strike point and nothing past LightningHurtRadiusMeters.");
 
                 // ---- 05 - Fire, advanced file ----
 
@@ -491,6 +503,23 @@ namespace RavenIron.RagnaroksWrath.Config
                         "Ground radius set alight at a lightning strike, in metres. Kept small on purpose — one " +
                         "bolt starts one fire, and the weather and land decide what it becomes.",
                         new AcceptableValueRange<float>(0.5f, 8f)));
+
+                LightningDamage = advanced.Bind(FireSection, "LightningDamage", 60f,
+                    new ConfigDescription(
+                        "Lightning damage to a player standing right where a bolt lands, before armour and " +
+                        "resistances. It falls off fast: a quarter at half the hurt radius.",
+                        new AcceptableValueRange<float>(0f, 1000f)));
+
+                LightningHurtRadiusMeters = advanced.Bind(FireSection, "LightningHurtRadiusMeters", 8f,
+                    new ConfigDescription(
+                        "How close to a strike, in metres, a player must be to be hurt by it.",
+                        new AcceptableValueRange<float>(0f, 30f)));
+
+                LightningAttractMeters = advanced.Bind(FireSection, "LightningAttractMeters", 20f,
+                    new ConfigDescription(
+                        "How far, in metres, a bolt reaches for the tallest thing around where it would land: " +
+                        "a tree, a ridge. 0 lands it where it was aimed, as before.",
+                        new AcceptableValueRange<float>(0f, 40f)));
 
                 // ==== 06 - Plague =====================================================================
 
@@ -1119,6 +1148,10 @@ namespace RavenIron.RagnaroksWrath.Config
                     "Client-side: drifts grey ash over badly burned ground on your own screen, thinning as " +
                     "the land heals. Separate from FireFront's own flames and scorched-ground marks, which " +
                     "are unaffected by this setting.");
+
+                LightningBoltsEnabled = cfg.Bind(VisualsSection, "LightningBoltsEnabled", true,
+                    "Draws each lightning strike on this player's screen: the bolt, its flash and its " +
+                    "thunder. Off, strikes still happen and still hurt; they are simply not drawn.");
 
                 RelicRunesEnabled = cfg.Bind(VisualsSection, "RelicRunesEnabled", true,
                     "Client-side: shows rune glyphs rising around standing relic stones on your own screen " +

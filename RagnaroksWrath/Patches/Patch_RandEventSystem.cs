@@ -26,6 +26,9 @@ namespace RavenIron.RagnaroksWrath.Patches
             // fails to load.
             WeatherSystem.RegisterStormEvent(__instance);
 
+            // Every machine needs the strike message's handler; a no-op while routed RPCs are not up.
+            try { Net.LightningSync.EnsureRegistered(); } catch { }
+
             return true;
         }
     }

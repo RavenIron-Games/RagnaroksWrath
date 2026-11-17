@@ -37,11 +37,39 @@ server's settings are sent to every player at login and whenever they change, th
   Visuals, are the server's and are synced.
 - `wrath status` now says where this machine's settings come from.
 
+### Lightning you can see, hear and feel
+
+A bolt used to be invisible: a fire and a line of text. Now each strike is a real one.
+
+- **The bolt is drawn** on every player's screen: a jagged, branching channel from the clouds to
+  whatever it hit, flickering through two to four return strokes the way real lightning does, with
+  a flash that lights up the trees and ground around it. Every player sees the same bolt.
+- **Thunder arrives at the speed of sound**: a crack at once when the strike is close, a rumble
+  seconds after the flash when it is far (about three seconds per kilometre). The flash and thunder
+  are the game's own thunderstorm effects; nothing new is added to the package.
+- **Bolts go for tall things**: a tree or a ridge within `LightningAttractMeters` (20 m) of where
+  the bolt was heading usually takes it, as real lightning does. The homestead standoff still
+  holds: no bolt ever lands near anything you built.
+- **Close strikes hurt** (`LightningHurtsPlayers`, on): within `LightningHurtRadiusMeters` (8 m) a
+  bolt deals up to `LightningDamage` (60) lightning damage and throws you back, a quarter of that
+  at half the distance. Lightning resistance helps, and a strike right beside a fresh character can
+  kill. Bolts still aim 15–40 m from a player, so a close strike is rare unless you stand by the
+  tallest tree around.
+- **Bolts strike in the rain too.** A thunderstorm that never threw lightning in the rain was the
+  least realistic thing about it. Rain now stops only the fire: a wet storm's bolts flash, thunder
+  and hurt like a dry one's, and start nothing.
+- The "Lightning splits the sky!" message is gone; the bolt says it.
+- `LightningBoltsEnabled` (Visuals, each player's own) turns the drawing off for one player;
+  strikes still happen and still hurt.
+
 ### Force a storm
 
 - **`wrath storm start`** starts a storm now: where you stand when typed in game, on a random online
   player from the server console. Add `dry` or `wet` to choose the look, and `x z` to place it.
 - **`wrath storm stop`** ends the storm now.
+- **`wrath storm strike`** throws one lightning bolt now, near a player under the storm. Every rule
+  of a natural bolt still applies (the homestead standoff, rain stopping the fire); only the wait
+  is skipped. The reply says what it hit.
 - Admins only, like the rest of `wrath`. A storm will not start over another event (a raid, a
   merchant visit), because the game has one event slot and starting it would end the other; it says
   so instead.

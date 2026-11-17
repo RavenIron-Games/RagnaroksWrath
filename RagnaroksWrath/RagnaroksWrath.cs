@@ -133,6 +133,7 @@ namespace RavenIron.RagnaroksWrath
                 gameObject.AddComponent<Visuals.FrostBreath>();
                 gameObject.AddComponent<Visuals.ScorchAsh>();
                 gameObject.AddComponent<Visuals.RelicRunes>();
+                gameObject.AddComponent<Visuals.LightningBolts>();
                 gameObject.AddComponent<Client.HealthEffects>();
                 gameObject.AddComponent<Client.ConsequenceEffects>();
             }

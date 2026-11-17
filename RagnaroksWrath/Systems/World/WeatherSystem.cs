@@ -138,7 +138,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                     $"vanilla's event override, which outranks the biome weather list - wet " +
                     $"'{ModConfig.StormForcedEnvironment.Value}' or dry " +
                     $"'{ModConfig.StormDryEnvironment.Value}', dry {ModConfig.StormDryChance.Value:P0} " +
-                    "of the time. Rain suppresses lightning, so only the dry one can start fires. " +
+                    "of the time. Both throw lightning; only the dry one's bolts can start fires. " +
                     "Coexists with Seasonality (verified 2026-09-03); a mod that patches the " +
                     "override path itself may still win.");
         }
@@ -580,7 +580,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             RagnaroksWrath.Log.LogInfo(
                 ModConfig.StormsForceWeather.Value
                     ? $"[WeatherSystem] storm started at ({centre.x:F0}, {centre.z:F0}) - rolled " +
-                      $"{(dry ? $"DRY ('{ModConfig.StormDryEnvironment.Value}'), so lightning may strike" : $"WET ('{ModConfig.StormForcedEnvironment.Value}'), so rain suppresses lightning")} " +
+                      $"{(dry ? $"DRY ('{ModConfig.StormDryEnvironment.Value}'), so its bolts can start fires" : $"WET ('{ModConfig.StormForcedEnvironment.Value}'), so its bolts strike but start no fire")} " +
                       $"(StormDryChance {ModConfig.StormDryChance.Value:F2})."
                     : $"[WeatherSystem] storm started at ({centre.x:F0}, {centre.z:F0}) - rolled " +
                       $"{(dry ? "dry" : "wet")}, but StormsForceWeather is off so the sky is the " +

@@ -32,8 +32,12 @@
   "EnableFire": "FireFront, a separate mod, simulates the fire itself; this only reads where it is burning and records the scorch, which heals on its own over time. It also gates the storm lightning below, since that needs FireFront too.",
   "FireScorchIntervalSeconds": "",
   "FireScorchPerMinute": "This does not scale with the number of fires — a bigger fire already covers more zones, so counting fires too would double the effect. Scorch heals on its own over time, more slowly than it builds here.",
-  "StormLightningEnabled": "A bolt only ever lands near an online player, never within the homestead standoff below, and never where it is raining — including a storm forced to look rainy. If storms are forced to a wet look, set a dry environment there instead, or lightning will never strike.",
-  "LightningMeanMinutes": "Against the default 10-minute storm, the default here gives a dry storm about two to three bolts while a player stands under it, so roughly nine dry storms in ten produce at least one. Wet storms produce none.",
+  "StormLightningEnabled": "A bolt only ever lands near an online player and never within the homestead standoff below. Each strike is drawn on every player's screen with its flash and with thunder that arrives late from far away, as real thunder does. Bolts strike in rain too, but rain stops them starting fires, including a storm forced to look rainy.",
+  "LightningMeanMinutes": "Against the default 10-minute storm, the default here gives a storm about two to three bolts while a player stands under it, so roughly nine storms in ten produce at least one. Only a dry storm's bolts can start fires.",
+  "LightningHurtsPlayers": "Every player gets the server's value. Off, bolts still strike, flash and thunder; they just never hurt anyone.",
+  "LightningDamage": "Lightning resistance (a mead, some armour) reduces it as for any lightning damage, and a bolt can kill.",
+  "LightningHurtRadiusMeters": "",
+  "LightningAttractMeters": "Trees are judged as about 14 m tall, scaled by their size, and the land by its generated height, which knows nothing of digging or raising. The tallest point usually wins but not always, as with real lightning.",
   "LightningRingMinMeters": "",
   "LightningRingMaxMeters": "",
   "LightningStandoffMeters": "",
@@ -145,7 +149,8 @@
   "FrostBreathFloor": "",
   "ScorchAshEnabled": "",
   "ScorchAshDensity": "",
-  "RelicRunesEnabled": ""
+  "RelicRunesEnabled": "",
+  "LightningBoltsEnabled": ""
  },
  "client": {
   "TickBudgetMs": false,
@@ -186,6 +191,10 @@
   "LightningRingMaxMeters": false,
   "LightningStandoffMeters": false,
   "LightningIgniteRadiusMeters": false,
+  "LightningHurtsPlayers": true,
+  "LightningDamage": true,
+  "LightningHurtRadiusMeters": true,
+  "LightningAttractMeters": false,
   "EnablePlague": false,
   "PlagueSpreadIntervalSeconds": false,
   "PlagueGrowthPerHour": false,
@@ -293,6 +302,7 @@
   "FrostBreathFloor": true,
   "ScorchAshEnabled": true,
   "ScorchAshDensity": true,
-  "RelicRunesEnabled": true
+  "RelicRunesEnabled": true,
+  "LightningBoltsEnabled": true
  }
 }

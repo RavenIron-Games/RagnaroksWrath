@@ -40,6 +40,7 @@ namespace RagnaroksWrath.Tests
             StormAreaTests();
             StormLookTests();
             StormLiveTests();
+            LightningRealismTests();
             ConfigLedgerTests();
             WindStateTests();
             FireScorchTests();
@@ -1074,6 +1075,10 @@ namespace RagnaroksWrath.Tests
                 // A setting that held its old shipped default is reset to the new one (version 4's
                 // rebase) instead of carried, so it arrives by that route.
                 if (plan.ResetToDefault.Contains(b)) continue;
+                // A setting NEW since the fixture was written needs no migration: BepInEx writes it at
+                // its default into a file that never had it. Named here so a key that should have
+                // moved cannot hide among them.
+                if (AddedSinceLayout2.Contains(b)) continue;
                 if (old.ContainsKey(b) && !plan.Dropped.Exists(d => d.Slot == b)) { stayed++; continue; }
                 everyBoundReached = false;
                 Console.WriteLine("      bound but never carried to: " + b);
@@ -1643,6 +1648,94 @@ namespace RagnaroksWrath.Tests
             return description?.Description ?? "";
         }
 
+
+        /// <summary>Settings added after the 0.27.5 fixture's layout, all with realistic lightning (2026-11-17).</summary>
+        private static readonly HashSet<string> AddedSinceLayout2 = new HashSet<string>(StringComparer.Ordinal)
+        {
+            ConfigLedger.Slot(ModConfig.FireSection, "LightningHurtsPlayers"),
+            ConfigLedger.Slot(ModConfig.VisualsSection, "LightningBoltsEnabled"),
+            ConfigLedger.AdvancedSlot(ModConfig.FireSection, "LightningDamage"),
+            ConfigLedger.AdvancedSlot(ModConfig.FireSection, "LightningHurtRadiusMeters"),
+            ConfigLedger.AdvancedSlot(ModConfig.FireSection, "LightningAttractMeters"),
+        };
+
+        // ---- Lightning realism --------------------------------------------------------
+
+        private static void LightningRealismTests()
+        {
+            Console.WriteLine("\nLightning realism");
+            LightningStrike.Target T(float top, bool tree = false) =>
+                new LightningStrike.Target { Ground = new UnityEngine.Vector3(0f, 0f, 0f), Top = top, IsTree = tree };
+
+            var field = new List<LightningStrike.Target> { T(30f), T(31f), T(44f, tree: true), T(29f) };
+            Check("with no preference the bolt always takes the highest point (the tall tree)",
+                LightningStrike.ChooseTarget(field, 0.0, 0f) == 2 && LightningStrike.ChooseTarget(field, 0.99, 0f) == 2);
+
+            // What FireSystem actually asks: one tall tree among seven ground samples ~13 m lower,
+            // at its 3 m preference. 1 / (1 + 7 e^(-13/3)) is about 0.92.
+            var forest = new List<LightningStrike.Target> { T(44f, tree: true) };
+            for (int g = 0; g < 7; g++) forest.Add(T(31f));
+            int treeWins = 0;
+            for (int i = 0; i < 1000; i++)
+                if (LightningStrike.ChooseTarget(forest, (i + 0.5) / 1000.0, 3f) == 0) treeWins++;
+            Check($"a tree 13 m above seven patches of ground takes about 9 bolts in 10 ({treeWins}/1000)",
+                treeWins > 900 && treeWins < 940);
+
+            var even = new List<LightningStrike.Target> { T(30f), T(30f) };
+            Check("two equal heights split evenly",
+                LightningStrike.ChooseTarget(even, 0.25, 4f) == 0 && LightningStrike.ChooseTarget(even, 0.75, 4f) == 1);
+            var near = new List<LightningStrike.Target> { T(30f), T(26f) };
+            int lowWins = 0;
+            for (int i = 0; i < 1000; i++)
+                if (LightningStrike.ChooseTarget(near, (i + 0.5) / 1000.0, 4f) == 1) lowWins++;
+            Check($"a point 4 m lower still wins sometimes, about 27% at the default ({lowWins}/1000)",
+                lowWins > 220 && lowWins < 320);
+            Check("no candidates is -1, a NaN height never wins, all-NaN is -1",
+                LightningStrike.ChooseTarget(new List<LightningStrike.Target>(), 0.5, 4f) == -1 &&
+                LightningStrike.ChooseTarget(new List<LightningStrike.Target> { T(float.NaN), T(10f) }, 0.01, 4f) == 1 &&
+                LightningStrike.ChooseTarget(new List<LightningStrike.Target> { T(float.NaN), T(10f) }, 0.99, 4f) == 1 &&
+                LightningStrike.ChooseTarget(new List<LightningStrike.Target> { T(float.NaN) }, 0.5, 0f) == -1);
+
+            Check("full damage at the strike point", Math.Abs(LightningStrike.DamageAt(0f, 8f, 60f) - 60f) < 0.01f);
+            Check("a quarter at half the radius (squared falloff)", Math.Abs(LightningStrike.DamageAt(4f, 8f, 60f) - 15f) < 0.01f);
+            Check("nothing at or past the radius, and garbage never hurts",
+                LightningStrike.DamageAt(8f, 8f, 60f) == 0f && LightningStrike.DamageAt(20f, 8f, 60f) == 0f &&
+                LightningStrike.DamageAt(float.NaN, 8f, 60f) == 0f && LightningStrike.DamageAt(1f, 0f, 60f) == 0f &&
+                LightningStrike.DamageAt(1f, 8f, -5f) == 0f);
+
+            var cloud = new UnityEngine.Vector3(10f, 300f, -4f);
+            var ground = new UnityEngine.Vector3(12f, 40f, -6f);
+            List<UnityEngine.Vector3> a = LightningStrike.BoltPath(cloud, ground, 1234, 6, 0.25f);
+            List<UnityEngine.Vector3> b = LightningStrike.BoltPath(cloud, ground, 1234, 6, 0.25f);
+            List<UnityEngine.Vector3> c = LightningStrike.BoltPath(cloud, ground, 99, 6, 0.25f);
+            bool same = a.Count == b.Count;
+            for (int i = 0; same && i < a.Count; i++) same = a[i].x == b[i].x && a[i].y == b[i].y && a[i].z == b[i].z;
+            Check($"the same seed draws the same bolt on every machine ({a.Count} points)", same && a.Count == 65);
+            Check("the bolt starts in the cloud and ends exactly on the ground point",
+                a[0].x == cloud.x && a[0].y == cloud.y && a[a.Count - 1].x == ground.x && a[a.Count - 1].y == ground.y && a[a.Count - 1].z == ground.z);
+            bool differs = false;
+            for (int i = 1; i < a.Count - 1 && !differs; i++) differs = a[i].x != c[i].x;
+            Check("another seed draws another bolt", differs);
+            bool jagged = false;
+            for (int i = 1; i < a.Count - 1 && !jagged; i++) jagged = Math.Abs(a[i].x - (cloud.x + (ground.x - cloud.x) * i / (a.Count - 1f))) > 1f;
+            Check("the channel is jagged, not a straight line", jagged);
+            Check("absurd pass counts are capped, so a bad value cannot cost a frame",
+                LightningStrike.BoltPath(cloud, ground, 1, 50, 0.25f).Count == 257);
+
+            var forks = LightningStrike.BoltBranches(a, 1234, 3, 4, 0.3f);
+            bool forksDown = forks.Count == 3;
+            foreach (var f in forks) forksDown &= f[f.Count - 1].y < f[0].y && f[0].y > ground.y;
+            Check("branches fork downward off the upper channel and die in the air", forksDown);
+
+            float[] strokes = LightningStrike.StrokeTimes(7);
+            bool spaced = strokes.Length >= 2 && strokes.Length <= 4 && strokes[0] == 0f;
+            for (int i = 1; i < strokes.Length; i++) { float gap = strokes[i] - strokes[i - 1]; spaced &= gap >= 0.04f && gap <= 0.12f; }
+            Check($"a flash is 2-4 return strokes, 40-120 ms apart ({strokes.Length})", spaced);
+
+            Check("thunder from 343 m arrives a second later, from 3 km about nine",
+                Math.Abs(LightningStrike.ThunderDelay(343f) - 1f) < 0.001f &&
+                Math.Abs(LightningStrike.ThunderDelay(3000f) - 8.75f) < 0.01f && LightningStrike.ThunderDelay(-1f) == 0f);
+        }
 
         // ---- StormLive --------------------------------------------------------------
 
