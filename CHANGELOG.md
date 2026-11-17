@@ -77,6 +77,12 @@ so changing them meant a full restart for every player. They now apply the momen
 - **Every player follows the server's sky, duration and range** (through ServerSync, above), and a
   storm already running changes sky. A change made in a configuration manager does the same.
 - The lightning rate and the dry chance were always read when used, so they were already live.
+- **Storm size goes up to 5000 m** (was 1024): `wrath storm set size <metres>` sets the storm's
+  radius, live, including a storm already raging. Everything about a storm (the banner, the storm
+  sky, plague spread, the war's escalation, lightning) covers that same circle. The setting is
+  `StormRangeMeters` in the advanced file; its default stays 96 m. A bigger storm still throws about
+  the same number of bolts, each near a player inside it, so it covers more ground without striking
+  more often.
 
 ## 0.29.0
 

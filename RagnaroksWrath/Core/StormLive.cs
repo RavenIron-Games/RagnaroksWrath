@@ -62,7 +62,7 @@ namespace RavenIron.RagnaroksWrath.Core
 
         // ---- the `wrath storm` console ---------------------------------------------------------
 
-        public const string AdminKeys = "sky, duration, range, wetsky, drysky, drychance, lightning, lightningon";
+        public const string AdminKeys = "sky, duration, size (radius in m), wetsky, drysky, drychance, lightning, lightningon";
 
         /// <summary>One line per setting, as the console prints them.</summary>
         public static string Describe(Settings effective, bool fromServer)
@@ -71,7 +71,7 @@ namespace RavenIron.RagnaroksWrath.Core
             return
                 $"storm sky forced: {(effective.Force ? "ON" : "off")} (wet '{effective.WetSky}', dry '{effective.DrySky}', " +
                 $"dry chance {ModConfig.StormDryChance.Value.ToString("0.##", c)})\n" +
-                $"storm lasts {effective.Duration.ToString("0.#", c)}s, reaches {effective.Range.ToString("0.#", c)}m" +
+                $"storm lasts {effective.Duration.ToString("0.#", c)}s, size {effective.Range.ToString("0.#", c)}m radius" +
                 (fromServer ? " (as the server set them)" : "") + "\n" +
                 $"lightning {(ModConfig.StormLightningEnabled.Value ? "ON" : "off")}, about one bolt every " +
                 $"{ModConfig.LightningMeanMinutes.Value.ToString("0.##", c)} min under a dry sky";
@@ -107,7 +107,9 @@ namespace RavenIron.RagnaroksWrath.Core
                     return true;
                 case "duration":
                     return SetNumber(ModConfig.StormDurationSeconds, "StormDurationSeconds", text, out message);
+                case "size":
                 case "range":
+                case "radius":
                     return SetNumber(ModConfig.StormRangeMeters, "StormRangeMeters", text, out message);
                 case "drychance":
                     return SetNumber(ModConfig.StormDryChance, "StormDryChance", text, out message);

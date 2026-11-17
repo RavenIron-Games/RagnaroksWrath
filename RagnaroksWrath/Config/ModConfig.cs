@@ -369,11 +369,15 @@ namespace RavenIron.RagnaroksWrath.Config
                         "low on purpose, since this only reads state rather than computing anything heavy.",
                         new AcceptableValueRange<float>(1f, 60f)));
 
+                // Ceiling raised 1024 -> 5000 on 2026-11-17 at the owner's request, for admins who want
+                // a storm to cover a whole region. Every reader takes the radius off the running event
+                // (StormArea, the banner, the forced sky), so the size is one number end to end. A
+                // higher ceiling cannot move a stored value; a lower one would clamp it silently.
                 StormRangeMeters = advanced.Bind(WeatherSection, "StormRangeMeters", 96f,
                     new ConfigDescription(
-                        "Radius of a storm's effect, in metres. The on-screen banner and every gameplay effect " +
-                        "of the storm use this same distance, so they always agree on where it reaches.",
-                        new AcceptableValueRange<float>(32f, 1024f)));
+                        "Radius of a storm, in metres: how much ground it covers. The banner, the storm sky and " +
+                        "every gameplay effect use this same distance. Change it in game with wrath storm set size.",
+                        new AcceptableValueRange<float>(32f, 5000f)));
 
                 StormPlagueSpreadMultiplier = advanced.Bind(WeatherSection, "StormPlagueSpreadMultiplier", 1.5f,
                     new ConfigDescription(

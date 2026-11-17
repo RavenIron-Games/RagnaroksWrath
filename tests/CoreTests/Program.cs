@@ -1694,6 +1694,14 @@ namespace RagnaroksWrath.Tests
                 Check("an out-of-range value is reported as CLAMPED, not as what was typed",
                     StormLive.TrySet("duration", "999999", out string m3) && Math.Abs(ModConfig.StormDurationSeconds.Value - 3600f) < 0.01f &&
                     m3.Contains("3600") && m3.Contains("clamped"));
+                Check("`storm set size 2500` sets the storm radius, and `range` / `radius` mean the same",
+                    StormLive.TrySet("size", "2500", out string ms) && Math.Abs(ModConfig.StormRangeMeters.Value - 2500f) < 0.01f && ms.Contains("2500") &&
+                    StormLive.TrySet("radius", "300", out _) && Math.Abs(ModConfig.StormRangeMeters.Value - 300f) < 0.01f &&
+                    StormLive.TrySet("range", "96", out _) && Math.Abs(ModConfig.StormRangeMeters.Value - 96f) < 0.01f);
+                Check("a storm can cover up to 5000 m and no more",
+                    StormLive.TrySet("size", "5000", out string m5k) && !m5k.Contains("clamped") &&
+                    StormLive.TrySet("size", "9000", out string m9k) && Math.Abs(ModConfig.StormRangeMeters.Value - 5000f) < 0.01f && m9k.Contains("clamped"));
+
                 Check("`storm set lightning 2` and `drychance 0.8` reach their entries",
                     StormLive.TrySet("lightning", "2", out _) && Math.Abs(ModConfig.LightningMeanMinutes.Value - 2f) < 0.01f &&
                     StormLive.TrySet("drychance", "0.8", out _) && Math.Abs(ModConfig.StormDryChance.Value - 0.8f) < 0.001f);
