@@ -388,7 +388,9 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                               (ignited ? ", and it may burn." : ", and started no fire.");
             RagnaroksWrath.Log.LogInfo(
                 $"[{Name}] lightning struck {(tookTree ? "a tree" : "open ground")} at ({strike.x:F0}, {strike.z:F0}) in " +
-                $"{ZoneKey.FromWorldPos(strike)}, {Vector3.Distance(aim, strike):F0} m from where it was aimed — " +
+                // Along the ground: aim carries the player's height and strike the tree's base, so a
+                // 3D distance once read "42 m" for a bolt that moved 20 (Storm10, 2026-11-17).
+                $"{ZoneKey.FromWorldPos(strike)}, {StormArea.DistanceXZ(aim, strike):F0} m from where it was aimed — " +
                 (ignited ? "the fire, if any, is FireFront's now."
                  : !fireMayCatch ? (forcedSky ? "no fire: the storm's sky is wet." : raining == true ? "no fire: it rains there." : "no fire: FireFront cannot say whether it rains there.")
                  : "no fire: FireFront's ignite call did not take."));
