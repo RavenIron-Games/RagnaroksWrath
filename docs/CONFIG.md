@@ -329,7 +329,7 @@ In `com.raveniron.ragnarokswrath.cfg`:
 - **`PlagueFogEnabled`** (on/off, default `true`): Client-side: shows a low, grey-green mist over plagued ground on your own screen. Every player chooses this for themselves; purely visual.
 - **`FrostBreathEnabled`** (on/off, default `true`): Client-side: fogs your character's breath on land whose cold has built up, as an early warning before the chill effect itself sets in.
 - **`ScorchAshEnabled`** (on/off, default `true`): Client-side: drifts grey ash over badly burned ground on your own screen, thinning as the land heals. Separate from FireFront's own flames and scorched-ground marks, which are unaffected by this setting.
-- **`RelicRunesEnabled`** (on/off, default `true`): Client-side: shows rune glyphs rising around standing relic stones on your own screen — gold on blessed ground, red on cursed.
+- **`RelicRunesEnabled`** (on/off, default `true`): Client-side: marks standing relic stones on your own screen — a tall pulsing pillar of light and a soft glow you can see from a couple of zones away, and rune glyphs rising around the stone up close. Gold on blessed ground, red on cursed.
 - **`LightningBoltsEnabled`** (on/off, default `true`) *(read on each player's game, each player's own)*: Draws each lightning strike on this player's screen: the bolt, its flash and its thunder. Off, strikes still happen and still hurt; they are simply not drawn.
 
 In `com.raveniron.ragnarokswrath.advanced.cfg`:
