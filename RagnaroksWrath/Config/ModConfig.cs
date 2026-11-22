@@ -1154,8 +1154,9 @@ namespace RavenIron.RagnaroksWrath.Config
                     "thunder. Off, strikes still happen and still hurt; they are simply not drawn.");
 
                 RelicRunesEnabled = cfg.Bind(VisualsSection, "RelicRunesEnabled", true,
-                    "Client-side: shows rune glyphs rising around standing relic stones on your own screen " +
-                    "— gold on blessed ground, red on cursed.");
+                    "Client-side: marks standing relic stones on your own screen — a tall pulsing pillar of " +
+                    "light and a soft glow you can see from a couple of zones away, and rune glyphs rising " +
+                    "around the stone up close. Gold on blessed ground, red on cursed.");
 
                 // ---- 15 - Visuals, advanced file ----
 

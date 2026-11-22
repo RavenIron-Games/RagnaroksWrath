@@ -24,3 +24,6 @@ Thumbs.db
 
 # Release zips
 dist/
+
+# The robot player (private tooling, never on GitHub)
+tools/autotest/

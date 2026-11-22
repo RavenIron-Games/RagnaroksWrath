@@ -315,16 +315,29 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         /// <summary>A standing relic whose stone was never CONFIRMED keeps asking whenever
         /// a client is present to build it. Placement is fire-and-forget no longer — the
         /// 0.17.0 first consecration was lost to an unarmed client handler, and a retry
-        /// gated on the persisted Placed flag is what makes that unrepeatable.</summary>
+        /// gated on the persisted Placed flag is what makes that unrepeatable.
+        ///
+        /// Snapshot first: on a host that is also a player (single player, listen host) the
+        /// request is routed to THIS machine, which places the stone and confirms it in the
+        /// same call — RelicLedger.MarkPlaced writes the relic table mid-loop, and the
+        /// enumerator threw, aborting the rest of the tick. Caught by the robot player on
+        /// 2026-11-22; a dedicated server routes to another peer and never saw it.</summary>
         private void RetryPlacement()
         {
+            _unplaced.Clear();
             foreach (KeyValuePair<ZoneKey, RelicLedger.Relic> kv in RelicLedger.AllRelics())
+                if (!kv.Value.Placed) _unplaced.Add(kv);
+
+            for (int i = 0; i < _unplaced.Count; i++)
             {
-                if (kv.Value.Placed) continue;
+                KeyValuePair<ZoneKey, RelicLedger.Relic> kv = _unplaced[i];
                 if (_presentPeer.TryGetValue(kv.Key, out long peer))
                     RelicSync.RequestPlacement(peer, kv.Key, kv.Value);
             }
         }
+
+        private readonly List<KeyValuePair<ZoneKey, RelicLedger.Relic>> _unplaced =
+            new List<KeyValuePair<ZoneKey, RelicLedger.Relic>>(4);
 
         private void TellStories()
         {
