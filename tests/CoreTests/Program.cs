@@ -2042,6 +2042,26 @@ namespace RagnaroksWrath.Tests
                     !FireBlame.Collect(pos, ign, blame) && blame.Count == 0);
             }
 
+            // FireFrontBinding: a hot reload swaps FireFront's assembly; the bridge must notice.
+            {
+                var bind = new FireFrontBinding();
+                object build1 = new object(), build2 = new object();
+                Check("binding: nothing loaded yet waits, and binds nothing",
+                    bind.Observe(null) == FireFrontBinding.Step.Wait && bind.Bound == null);
+                Check("binding: the first build binds",
+                    bind.Observe(build1) == FireFrontBinding.Step.Bind && ReferenceEquals(bind.Bound, build1));
+                Check("binding: the same build keeps its handles",
+                    bind.Observe(build1) == FireFrontBinding.Step.Keep);
+                Check("binding: mid-reload (no instance) waits and keeps the old binding",
+                    bind.Observe(null) == FireFrontBinding.Step.Wait && ReferenceEquals(bind.Bound, build1));
+                Check("binding: a different build rebinds",
+                    bind.Observe(build2) == FireFrontBinding.Step.Rebind && ReferenceEquals(bind.Bound, build2));
+                Check("binding: and then keeps the new build",
+                    bind.Observe(build2) == FireFrontBinding.Step.Keep);
+                Check("binding: going back to the first build is a rebind too",
+                    bind.Observe(build1) == FireFrontBinding.Step.Rebind);
+            }
+
             // Zone size is 64; positions 10m apart share a zone, 100m apart do not.
             var fires = new List<Vector3>
             {
