@@ -169,6 +169,14 @@ namespace RavenIron.RagnaroksWrath
             WorldTick.Register(new Systems.ZoneSyncSystem());
         }
 
+        /// <summary>
+        /// Called by Hotload (Raven Iron's dev reloader) just before this build is torn down; never
+        /// in a normal game. Flush every store the way a world close does, so the build that
+        /// replaces this one loads what this one knew rather than the last two-minute save. The
+        /// new build's WorldTick then initialises lazily, exactly as on a fresh world.
+        /// </summary>
+        private void OnHotUnload() => WorldTick.EndWorld("hot reload");
+
         private void OnDestroy()
         {
             _harmony?.UnpatchSelf();

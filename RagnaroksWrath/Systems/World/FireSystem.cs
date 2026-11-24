@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using BepInEx;
 using BepInEx.Bootstrap;
 using UnityEngine;
 using RavenIron.RagnaroksWrath.Config;
@@ -132,6 +133,10 @@ namespace RavenIron.RagnaroksWrath.Systems.World
         private bool _rainAbsenceLogged;
         private readonly object[] _rainArgs = new object[1];
 
+        // Which FireFront build every handle above belongs to. A dev reload (Hotload) swaps
+        // FireFront's assembly mid-session; see FireFrontBinding for what that broke.
+        private readonly FireFrontBinding _binding = new FireFrontBinding();
+
         public void Initialise()
         {
             _live = this;
@@ -203,9 +208,18 @@ namespace RavenIron.RagnaroksWrath.Systems.World
 
         public void Tick(float deltaSeconds)
         {
-            if (!_fireFrontPresent) return;
+            if (!_fireFrontPresent)
+            {
+                // A FireFront hot-loaded after the world started arrives here, not in Initialise.
+                if (!Chainloader.PluginInfos.ContainsKey(FireFrontGuid)) return;
+                _fireFrontPresent = true;
+                _fireFrontVersion = Chainloader.PluginInfos[FireFrontGuid].Metadata.Version;
+                RagnaroksWrath.Log.LogInfo(
+                    $"[{Name}] FireFront {_fireFrontVersion} arrived after the world started — bridging.");
+            }
             if (!Persistence.IsLoaded) return;   // not the authority, or world not up yet
 
+            if (!SyncBinding()) return;
             if (!TryCollectFirePositions()) return;
 
             // Lightning rides the RESOLVED bridge and must run before the no-fires
@@ -299,6 +313,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
             if (live == null || !live._fireFrontPresent) { message = "lightning needs FireFront installed on the server."; return false; }
             if (!ModConfig.StormLightningEnabled.Value) { message = "storm lightning is off (StormLightningEnabled = false)."; return false; }
             if (!WeatherSystem.StormActive) { message = "no storm is raging; `wrath storm start` first."; return false; }
+            if (!live.SyncBinding()) { message = "FireFront is mid-reload; try again in a moment."; return false; }
             live._forcing = true;
             try { live.TryLightning(); }
             finally { live._forcing = false; }
@@ -544,7 +559,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 }
 
                 object instance = _instanceProperty?.GetValue(null);
-                if (instance == null) return false;
+                if (IsGone(instance)) return false;
 
                 _igniteMethod.Invoke(instance, new object[] { origin, radius });
                 return true;
@@ -637,7 +652,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 }
 
                 object instance = _instanceProperty?.GetValue(null);
-                if (instance == null) return 0L;
+                if (IsGone(instance)) return 0L;
 
                 return (long)_igniterProperty.GetValue(instance);
             }
@@ -646,6 +661,52 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 return 0L;   // attribution is optional; scorch must never depend on it
             }
         }
+
+        /// <summary>
+        /// Keep every reflection handle bound to the FireFront build that is loaded NOW. False
+        /// when there is no FireFront instance this tick (mid-reload), which skips the tick.
+        /// </summary>
+        private bool SyncBinding()
+        {
+            PluginInfo info;
+            Chainloader.PluginInfos.TryGetValue(FireFrontGuid, out info);
+            Assembly current = info?.Instance != null ? info.Instance.GetType().Assembly : null;
+            object before = _binding.Bound;
+
+            switch (_binding.Observe(current))
+            {
+                case FireFrontBinding.Step.Wait:
+                    return false;
+                case FireFrontBinding.Step.Rebind:
+                    _instanceProperty = null;
+                    _collectMethod = null;
+                    _collectWithIgnitersMethod = null;
+                    _collectWithIgnitersResolved = false;
+                    _igniterProperty = null;
+                    _igniterAbsenceLogged = false;
+                    _igniteMethod = null;
+                    _igniteGroundAbsenceLogged = false;
+                    _rainMethod = null;
+                    _rainAbsenceLogged = false;
+                    _blameMismatchLogged = false;
+                    _arson.Clear();   // the old build's igniter is gone with it
+                    _fireFrontVersion = info.Metadata.Version;
+                    RagnaroksWrath.Log.LogInfo(
+                        $"[{Name}] FireFront was reloaded ({(before as Assembly)?.GetName().Name} -> " +
+                        $"{current.GetName().Name}, {_fireFrontVersion}) — re-resolving the bridge.");
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary>
+        /// A handle into a destroyed FireManager still answers: Unity overloads == for its own
+        /// objects, but the reflected instance arrives as a plain object, so `instance == null` is
+        /// false for a dead component. Ask Unity.
+        /// </summary>
+        private static bool IsGone(object instance) =>
+            instance == null || (instance is UnityEngine.Object unity && unity == null);
 
         /// <summary>
         /// Fill _firePositions from FireFront, resolving the reflection handles on first use.
@@ -706,7 +767,7 @@ namespace RavenIron.RagnaroksWrath.Systems.World
                 }
 
                 object instance = _instanceProperty.GetValue(null);
-                if (instance == null) return false;   // FireManager not awake yet; normal early on
+                if (IsGone(instance)) return false;   // FireManager not awake yet (normal early on), or destroyed by a reload
 
                 _firePositions.Clear();
                 _fireIgniters.Clear();
