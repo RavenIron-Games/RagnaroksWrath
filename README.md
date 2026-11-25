@@ -2,7 +2,7 @@
 # ⛈️ Ragnarok's Wrath
 
 ![RAGNAROK'S WRATH](https://img.shields.io/badge/RAGNAROK%27S_WRATH-THE_LAND_REMEMBERS-c9a227?style=for-the-badge&labelColor=1b1b1b)
-![VERSION](https://img.shields.io/badge/VERSION-0.30.0-8b1e1e?style=for-the-badge&labelColor=1b1b1b)
+![VERSION](https://img.shields.io/badge/VERSION-0.31.0-8b1e1e?style=for-the-badge&labelColor=1b1b1b)
 ![CLIENT & SERVER](https://img.shields.io/badge/CLIENT_%26_SERVER-ONE_DLL_ON_BOTH-1f4e79?style=for-the-badge&labelColor=1b1b1b)
 
 > *The land remembers who walked it.*
@@ -15,17 +15,18 @@ There is no tracker, no dashboard, no HUD. The world tells you itself: a sickly 
 
 ---
 
-![NEW IN 0.30.0](https://img.shields.io/badge/NEW_IN_0.30.0-STORMS_WITH_TEETH-8b1e1e?style=for-the-badge&labelColor=1b1b1b)
+![NEW IN 0.31.0](https://img.shields.io/badge/NEW_IN_0.31.0-STONES_YOU_CAN_FIND-8b1e1e?style=for-the-badge&labelColor=1b1b1b)
 
-**Storms you can see, hear and feel, titles you choose, and one set of rules for everyone.**
+**Built for Valheim 1.0.30, and relic stones you can actually find.**
 
 | You | It |
 |---|---|
-| **Get caught in a storm** | it has its own sky now, lasts ten minutes, and throws real lightning: a branching bolt, a flash, thunder that arrives late from far away. Bolts go for the tallest tree, start fires unless it rains, and hurt anyone standing too close |
-| **Earn a title** | every one is kept, and `/wrath title` lets you choose which to wear |
-| **Run the server** | admins start, stop and reshape storms from the console, live: their sky, length, size and lightning |
-| **Change the config** | the server's settings now reach every player on their own, through ServerSync |
-| **Update** | the server and every player together: a player on any other version is refused at the door |
+| **Go looking for a relic stone** | a pillar of light in the stone's colour rises well above the trees, gold or red, visible from two zones away, with a soft glow at its foot. Easiest to spot at dusk and at night |
+| **Play single player or host from your game** | a stone being raised no longer trips an error that skipped the rest of that moment's relic work |
+| **Run FireFront beside it** | fire scars keep counting even if FireFront loads late or is reloaded mid-session |
+| **Update** | Valheim 1.0.30 changed its network version, so the game itself makes everyone update together; and as since 0.30.0, every player must run exactly the server's version of this mod |
+
+Still in 0.30.0's storms: their own sky, ten minutes long, with real lightning; titles you choose with `/wrath title`; admins reshaping storms live; and the server's settings reaching every player through ServerSync.
 
 ---
 

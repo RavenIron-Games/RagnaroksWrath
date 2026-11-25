@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.31.0 — 2026-11-25
+
+**Built for Valheim 1.0.30, and relic stones you can actually find.** Every player must update
+together, as since 0.30.0: this version refuses any player on another version.
+
+### Valheim 1.0.30
+
+- **Checked against 1.0.30, and no code needed to change.** Every game member this mod reaches for
+  still resolves, and both this build and the shipped 0.30.0 bind cleanly to the new game.
+- **Valheim's own network version moved 41 to 42.** A 1.0.30 player cannot join a server still on an
+  older game, or the reverse. Update the dedicated server's game as well as the players'.
+- **Needs FireFront 1.0.5** for fire scars, arson and storm lightning (mod managers bring it). Its
+  connection points to this mod are unchanged.
+
+### Relic stones you can find
+
+Until now a relic stone's only marker was a small column of runes that appeared when you were
+almost on top of it, so a stone could stand in the next clearing and never be found.
+
+- **A pillar of light.** Every standing stone within two zones of you raises a 45 m pillar of light
+  in its colour (gold on blessed ground, red on cursed), bright almost to the top, so it shows above
+  the treeline. It breathes slowly. Easiest to see at dusk and at night; by bright day, from far off,
+  it is a pale line.
+- **A glow at its foot**, lighting the stone at night.
+- **The runes** around the stone are a little denser when you stand at it.
+- **`RelicRunesEnabled`** (Visuals) still turns all of it off, on your own game only.
+
+### Fixes
+
+- **Single player and listen hosts: raising a relic stone threw an error** (`Collection was
+  modified`) and skipped the rest of that relic tick: the stone's story, the sync to other players
+  and the save waited for the next one. The stone itself stood. Dedicated servers were never affected.
+- **FireFront loaded late or reloaded mid-session is picked up again.** The fire bridge kept talking
+  to the first FireFront it found; one that arrived after the world started left fire scars
+  dormant, and a reloaded one left scars reading a FireFront that no longer existed. A world that
+  closes on a mod reload now saves the land's memory first, as it does on a normal close.
+
 ## 0.30.0 — 2026-11-17
 
 **Fiercer storms with real lightning, titles you choose, and the server's settings on every
